@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "Auto Cobranca Cobrador",
+    "slug": "auto-cobranca-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "autocobranca",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Necessario para registrar sua localizacao ao concluir ou falhar uma visita de cobranca.",
+        "NSCameraUsageDescription": "Necessario para fotografar o comprovante de pagamento.",
+        "NSPhotoLibraryUsageDescription": "Necessario para selecionar foto do comprovante de pagamento."
+      }
+    },
+    "android": {
+      "permissions": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.CAMERA"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Necessario para registrar sua localizacao ao concluir ou falhar uma visita de cobranca."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Necessario para fotografar o comprovante de pagamento."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

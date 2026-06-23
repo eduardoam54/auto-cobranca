@@ -1,0 +1,411 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id          String            @id @default(cuid())
+  name        String
+  document    String            @unique
+  phone       String
+  email       String
+  clients     Client[]
+  collections Collection[]
+  collectors  Collector[]
+  events      SystemEvent[]
+  messages    Message[]
+  tasks       CollectionTask[]
+  users       User[]
+  visits      CollectionVisit[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  deletedAt   DateTime?
+
+  @@map("companies")
+}
+
+model User {
+  id           String        @id @default(cuid())
+  companyId    String
+  company      Company       @relation(fields: [companyId], references: [id])
+  collectors   Collector[]
+  events       SystemEvent[]
+  name         String
+  email        String        @unique
+  passwordHash String
+  role         UserRole
+  active       Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  deletedAt    DateTime?
+
+  @@index([companyId])
+  @@index([role])
+  @@index([active])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model Client {
+  id            String            @id @default(cuid())
+  companyId     String
+  company       Company           @relation(fields: [companyId], references: [id])
+  collections   Collection[]
+  events        SystemEvent[]
+  messages      Message[]
+  tasks         CollectionTask[]
+  visits        CollectionVisit[]
+  name          String
+  document      String
+  phone         String
+  whatsappPhone String?
+  email         String?
+  address       String?
+  neighborhood  String?
+  city          String?
+  state         String?
+  zipCode       String?
+  latitude      Float?
+  longitude     Float?
+  notes         String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  deletedAt     DateTime?
+
+  @@unique([companyId, document])
+  @@index([companyId])
+  @@index([deletedAt])
+  @@map("clients")
+}
+
+model Collection {
+  id            String            @id @default(cuid())
+  companyId     String
+  company       Company           @relation(fields: [companyId], references: [id])
+  clientId      String
+  client        Client            @relation(fields: [clientId], references: [id])
+  events        SystemEvent[]
+  tasks         CollectionTask[]
+  visits        CollectionVisit[]
+  title         String
+  description   String?
+  amount        Decimal           @db.Decimal(12, 2)
+  dueDate       DateTime
+  status        CollectionStatus  @default(pending)
+  paymentMethod PaymentMethod?
+  paidAt        DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  deletedAt     DateTime?
+
+  @@index([companyId])
+  @@index([clientId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([deletedAt])
+  @@map("collections")
+}
+
+model Collector {
+  id               String            @id @default(cuid())
+  companyId        String
+  company          Company           @relation(fields: [companyId], references: [id])
+  userId           String?
+  user             User?             @relation(fields: [userId], references: [id])
+  tasks            CollectionTask[]
+  visits           CollectionVisit[]
+  name             String
+  phone            String
+  whatsappPhone    String?
+  email            String
+  active           Boolean           @default(true)
+  currentLatitude  Float?
+  currentLongitude Float?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  deletedAt        DateTime?
+
+  @@unique([companyId, email])
+  @@index([companyId])
+  @@index([userId])
+  @@index([active])
+  @@index([deletedAt])
+  @@map("collectors")
+}
+
+model CollectionTask {
+  id               String                 @id @default(cuid())
+  companyId        String
+  company          Company                @relation(fields: [companyId], references: [id])
+  clientId         String
+  client           Client                 @relation(fields: [clientId], references: [id])
+  collectionId     String?
+  collection       Collection?            @relation(fields: [collectionId], references: [id])
+  collectorId      String?
+  collector        Collector?             @relation(fields: [collectorId], references: [id])
+  events           SystemEvent[]
+  visits           CollectionVisit[]
+  title            String
+  description      String?
+  type             CollectionTaskType
+  priority         CollectionTaskPriority @default(medium)
+  status           CollectionTaskStatus   @default(pending)
+  scheduledDate    DateTime?
+  scheduledTime    String?
+  address          String?
+  latitude         Float?
+  longitude        Float?
+  aiRecommendation String?
+  completedAt      DateTime?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  deletedAt        DateTime?
+
+  @@index([companyId])
+  @@index([clientId])
+  @@index([collectionId])
+  @@index([collectorId])
+  @@index([priority])
+  @@index([status])
+  @@index([scheduledDate])
+  @@index([deletedAt])
+  @@map("collection_tasks")
+}
+
+model CollectionVisit {
+  id               String                @id @default(cuid())
+  companyId        String
+  company          Company               @relation(fields: [companyId], references: [id])
+  taskId           String
+  task             CollectionTask        @relation(fields: [taskId], references: [id])
+  clientId         String
+  client           Client                @relation(fields: [clientId], references: [id])
+  collectionId     String?
+  collection       Collection?           @relation(fields: [collectionId], references: [id])
+  collectorId      String?
+  collector        Collector?            @relation(fields: [collectorId], references: [id])
+  result           CollectionVisitResult
+  notes            String?
+  paymentReceived  Boolean               @default(false)
+  paymentAmount    Decimal?              @db.Decimal(12, 2)
+  paymentMethod    PaymentMethod?
+  receiptUrl       String?
+  latitude         Float?
+  longitude        Float?
+  locationAccuracy Float?
+  proofPhotoUrl    String?
+  visitedAt        DateTime
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  deletedAt        DateTime?
+
+  @@index([companyId])
+  @@index([taskId])
+  @@index([clientId])
+  @@index([collectionId])
+  @@index([collectorId])
+  @@index([result])
+  @@index([visitedAt])
+  @@index([deletedAt])
+  @@map("collection_visits")
+}
+
+model Message {
+  id                String           @id @default(cuid())
+  companyId         String
+  company           Company          @relation(fields: [companyId], references: [id])
+  clientId          String?
+  client            Client?          @relation(fields: [clientId], references: [id])
+  events            SystemEvent[]
+  phone             String
+  direction         MessageDirection
+  channel           MessageChannel
+  content           String
+  messageType       MessageType      @default(text)
+  externalMessageId String?
+  status            MessageStatus    @default(pending)
+  receivedAt        DateTime?
+  sentAt            DateTime?
+  aiAnalyzed        Boolean          @default(false)
+  aiIntent          String?
+  aiConfidence      Float?
+  aiSummary         String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  deletedAt         DateTime?
+
+  @@unique([companyId, externalMessageId])
+  @@index([companyId])
+  @@index([clientId])
+  @@index([phone])
+  @@index([direction])
+  @@index([channel])
+  @@index([status])
+  @@index([receivedAt])
+  @@index([sentAt])
+  @@index([aiAnalyzed])
+  @@index([deletedAt])
+  @@map("messages")
+}
+
+model SystemEvent {
+  id           String            @id @default(cuid())
+  companyId    String
+  company      Company           @relation(fields: [companyId], references: [id])
+  clientId     String?
+  client       Client?           @relation(fields: [clientId], references: [id])
+  collectionId String?
+  collection   Collection?       @relation(fields: [collectionId], references: [id])
+  taskId       String?
+  task         CollectionTask?   @relation(fields: [taskId], references: [id])
+  messageId    String?
+  message      Message?          @relation(fields: [messageId], references: [id])
+  actorUserId  String?
+  actorUser    User?             @relation(fields: [actorUserId], references: [id])
+  source       SystemEventSource
+  type         SystemEventType
+  status       SystemEventStatus @default(success)
+  description  String
+  metadata     Json?
+  occurredAt   DateTime          @default(now())
+  createdAt    DateTime          @default(now())
+
+  @@index([companyId])
+  @@index([clientId])
+  @@index([collectionId])
+  @@index([taskId])
+  @@index([messageId])
+  @@index([actorUserId])
+  @@index([source])
+  @@index([type])
+  @@index([status])
+  @@index([occurredAt])
+  @@map("system_events")
+}
+
+enum CollectionStatus {
+  pending
+  overdue
+  paid
+  canceled
+  renegotiated
+}
+
+enum UserRole {
+  admin
+  manager
+  collector
+  viewer
+}
+
+enum PaymentMethod {
+  cash
+  pix
+  bank_slip
+  credit_card
+  debit_card
+  other
+}
+
+enum CollectionVisitResult {
+  paid
+  partial_paid
+  not_home
+  refused_payment
+  promised_payment
+  wrong_address
+  rescheduled
+  other
+}
+
+enum CollectionTaskType {
+  presencial_collection
+  whatsapp_followup
+  phone_call
+  payment_confirmation
+  renegotiation_followup
+  other
+}
+
+enum CollectionTaskPriority {
+  low
+  medium
+  high
+  critical
+}
+
+enum CollectionTaskStatus {
+  pending
+  assigned
+  in_progress
+  completed
+  canceled
+  failed
+}
+
+enum MessageDirection {
+  inbound
+  outbound
+}
+
+enum MessageChannel {
+  whatsapp
+  system
+  manual
+}
+
+enum MessageType {
+  text
+  audio
+  image
+  document
+  location
+  other
+}
+
+enum MessageStatus {
+  received
+  sent
+  delivered
+  read
+  failed
+  pending
+}
+
+enum SystemEventSource {
+  whatsapp
+  ai
+  web
+  mobile
+  system
+}
+
+enum SystemEventType {
+  whatsapp_webhook_verified
+  whatsapp_message_received
+  whatsapp_message_duplicated
+  whatsapp_message_skipped
+  ai_analysis_started
+  ai_analysis_completed
+  ai_analysis_failed
+  ai_task_created
+  ai_task_duplicate_detected
+  ai_task_not_created
+  whatsapp_message_sent
+  task_assigned
+  task_started
+  task_completed
+  task_failed
+  payment_registered
+  manual_action
+}
+
+enum SystemEventStatus {
+  success
+  warning
+  failed
+}

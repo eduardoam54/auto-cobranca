@@ -1,0 +1,5 @@
+ALTER TABLE "collection_visits"
+ADD COLUMN "latitude" DOUBLE PRECISION,
+ADD COLUMN "longitude" DOUBLE PRECISION,
+ADD COLUMN "locationAccuracy" DOUBLE PRECISION,
+ADD COLUMN "proofPhotoUrl" TEXT;
