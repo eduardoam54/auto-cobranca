@@ -1,5 +1,7 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import * as XLSX from 'xlsx';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const pdfParse = require('pdf-parse') as (buf: Buffer) => Promise<{ text: string }>;
 import { PrismaService } from '../infra/prisma/prisma.service';
 import { AnthropicService } from '../infra/anthropic/anthropic.service';
 
@@ -39,7 +41,7 @@ export class ImportsService {
     companyId: string,
     file: Express.Multer.File,
   ): Promise<ImportResult> {
-    const text = this.fileToText(file);
+    const text = await this.fileToText(file);
     const rows = await this.extractRowsWithAI(text);
 
     if (!rows.length) {
@@ -64,7 +66,7 @@ export class ImportsService {
     };
   }
 
-  private fileToText(file: Express.Multer.File): string {
+  private async fileToText(file: Express.Multer.File): Promise<string> {
     const ext = file.originalname.split('.').pop()?.toLowerCase();
 
     if (ext === 'csv' || ext === 'txt') {
@@ -77,8 +79,13 @@ export class ImportsService {
       return XLSX.utils.sheet_to_csv(sheet);
     }
 
+    if (ext === 'pdf') {
+      const data = await pdfParse(file.buffer);
+      return data.text;
+    }
+
     throw new BadRequestException(
-      'Formato de arquivo nao suportado. Use CSV ou Excel (.xlsx, .xls).',
+      'Formato nao suportado. Use PDF, CSV ou Excel (.xlsx, .xls).',
     );
   }
 

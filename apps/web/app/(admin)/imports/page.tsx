@@ -23,7 +23,7 @@ type ImportResult = {
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000/api';
 
-const ACCEPTED = '.csv,.xlsx,.xls,.ods';
+const ACCEPTED = '.pdf,.csv,.xlsx,.xls,.ods';
 
 export default function ImportsPage() {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -101,7 +101,7 @@ export default function ImportsPage() {
         <section className="rounded-md border border-line bg-white p-6 shadow-sm">
           <h2 className="mb-1 text-sm font-semibold text-ink">Arquivo</h2>
           <p className="mb-4 text-xs text-muted">
-            Formatos aceitos: CSV, Excel (.xlsx, .xls, .ods). A planilha deve conter colunas de
+            Formatos aceitos: PDF, CSV, Excel (.xlsx, .xls). O arquivo deve conter colunas de
             nome do cliente, data de emissao, data de vencimento e valor.
           </p>
 
@@ -138,7 +138,7 @@ export default function ImportsPage() {
                   <p className="text-sm font-medium text-ink">
                     Arraste o arquivo aqui ou clique para selecionar
                   </p>
-                  <p className="mt-1 text-xs text-muted">CSV, XLSX ate 10 MB</p>
+                  <p className="mt-1 text-xs text-muted">PDF, CSV, XLSX ate 10 MB</p>
                 </>
               )}
             </div>
