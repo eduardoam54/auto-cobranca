@@ -20,6 +20,7 @@ import { AiCollectionAgentModule } from './modules/ai-collection-agent/ai-collec
 import { MessageAnalysisModule } from './modules/message-analysis/message-analysis.module';
 import { UserModule } from './users/users.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
+import { ImportsModule } from './imports/imports.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { WhatsappModule } from './whatsapp/whatsapp.module';
     AiCollectionAgentModule,
     MessageAnalysisModule,
     WhatsappModule,
+    ImportsModule,
   ],
 })
 export class AppModule {}

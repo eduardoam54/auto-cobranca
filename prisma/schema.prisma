@@ -94,6 +94,7 @@ model Collection {
   title         String
   description   String?
   amount        Decimal           @db.Decimal(12, 2)
+  issuedAt      DateTime?
   dueDate       DateTime
   status        CollectionStatus  @default(pending)
   paymentMethod PaymentMethod?
