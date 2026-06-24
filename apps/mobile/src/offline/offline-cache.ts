@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { MobileTask } from '@/types/api';
 
 const KEY = '@auto-cobranca/tasks-cache';
-const TTL_MS = 30 * 60 * 1000; // 30 minutes
+const TTL_MS = 8 * 60 * 60 * 1000; // 8 hours — covers a full workday
 
 type CacheEntry = {
   tasks: MobileTask[];

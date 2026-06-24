@@ -17,6 +17,7 @@ import * as Location from 'expo-location';
 import { AppButton, FormField, LoadingScreen, Screen } from '@/components/ui';
 import { OfflineQueuedError, useApiClient } from '@/api/client';
 import { useProtectedRoute } from '@/auth/auth-context';
+import { getCachedTasks } from '@/offline/offline-cache';
 import type {
   ClientVisit,
   CollectionVisitResult,
@@ -87,6 +88,7 @@ export default function TaskDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isOffline, setIsOffline] = useState(false);
 
   // Visit registration state
   const [selectedResult, setSelectedResult] = useState<CollectionVisitResult | null>(null);
@@ -112,10 +114,19 @@ export default function TaskDetailScreen() {
     try {
       const tasks = await request<MobileTask[]>('/mobile/my-tasks');
       const found = tasks.find((t) => t.id === taskId) ?? null;
+      setIsOffline(false);
       setTask(found);
       if (!found) setError('Tarefa nao encontrada.');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erro ao carregar tarefa.');
+      const cached = await getCachedTasks();
+      if (cached) {
+        const found = cached.find((t) => t.id === taskId) ?? null;
+        setTask(found);
+        setIsOffline(true);
+        if (!found) setError('Tarefa nao encontrada no cache offline.');
+      } else {
+        setError(e instanceof Error ? e.message : 'Erro ao carregar tarefa.');
+      }
     } finally {
       setLoading(false);
     }
@@ -339,6 +350,15 @@ export default function TaskDetailScreen() {
   return (
     <Screen>
       <ScrollView contentContainerStyle={s.content}>
+
+        {/* Offline banner */}
+        {isOffline ? (
+          <View style={s.offlineBanner}>
+            <Text style={s.offlineBannerText}>
+              Modo offline — exibindo dados em cache
+            </Text>
+          </View>
+        ) : null}
 
         {/* Header card */}
         <View style={s.card}>
@@ -760,6 +780,16 @@ function Info({ label, value }: { label: string; value?: string | number | null 
 
 const s = StyleSheet.create({
   content: { gap: 12, paddingBottom: 32 },
+
+  offlineBanner: {
+    borderRadius: 6,
+    backgroundColor: '#fef3c7',
+    borderWidth: 1,
+    borderColor: '#fcd34d',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  offlineBannerText: { fontSize: 12, fontWeight: '700', color: '#92400e' },
 
   // Cards
   card: {

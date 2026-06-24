@@ -24,12 +24,18 @@ export class CollectionTaskService {
       companyId,
     });
 
-    return this.prisma.collectionTask.create({
+    const task = await this.prisma.collectionTask.create({
       data: {
         ...createCollectionTaskDto,
         companyId,
       },
     });
+
+    if (createCollectionTaskDto.collectorId) {
+      void this.sendAssignmentPush(createCollectionTaskDto.collectorId, task.title, task.id);
+    }
+
+    return task;
   }
 
   findAll(companyId: string) {
@@ -81,12 +87,17 @@ export class CollectionTaskService {
     const { companyId: _ignoredCompanyId, ...data } = updateCollectionTaskDto;
     void _ignoredCompanyId;
 
-    return this.prisma.collectionTask.update({
-      where: {
-        id,
-      },
+    const updatedTask = await this.prisma.collectionTask.update({
+      where: { id },
       data,
     });
+
+    const newCollectorId = updateCollectionTaskDto.collectorId;
+    if (newCollectorId && newCollectorId !== task.collectorId) {
+      void this.sendAssignmentPush(newCollectorId, updatedTask.title, updatedTask.id);
+    }
+
+    return updatedTask;
   }
 
   async assignCollector(
@@ -115,22 +126,7 @@ export class CollectionTaskService {
       },
     });
 
-    // Fire-and-forget push notification
-    void this.prisma.collector
-      .findFirst({
-        where: { id: assignCollectorDto.collectorId },
-        select: { expoPushToken: true, name: true },
-      })
-      .then((collector) => {
-        if (collector?.expoPushToken) {
-          void this.expoPush.send({
-            to: collector.expoPushToken,
-            title: 'Nova tarefa atribuida',
-            body: updatedTask.title,
-            data: { taskId: updatedTask.id },
-          });
-        }
-      });
+    void this.sendAssignmentPush(assignCollectorDto.collectorId, updatedTask.title, updatedTask.id);
 
     return updatedTask;
   }
@@ -337,6 +333,24 @@ export class CollectionTaskService {
         'Cobrador nao pertence a empresa informada.',
       );
     }
+  }
+
+  private sendAssignmentPush(collectorId: string, taskTitle: string, taskId: string): Promise<void> {
+    return this.prisma.collector
+      .findFirst({
+        where: { id: collectorId },
+        select: { expoPushToken: true },
+      })
+      .then((collector) => {
+        if (collector?.expoPushToken) {
+          void this.expoPush.send({
+            to: collector.expoPushToken,
+            title: 'Nova tarefa atribuida',
+            body: taskTitle,
+            data: { taskId },
+          });
+        }
+      });
   }
 
   private ensureTaskCanBeFinished(status: string) {

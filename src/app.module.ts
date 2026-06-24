@@ -2,6 +2,7 @@ import { join } from 'path';
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { AuthModule } from './auth/auth.module';
 import { CollectionTaskModule } from './collection-tasks/collection-task.module';
@@ -21,12 +22,14 @@ import { MessageAnalysisModule } from './modules/message-analysis/message-analys
 import { UserModule } from './users/users.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { ImportsModule } from './imports/imports.module';
+import { PushSchedulerModule } from './modules/push-scheduler/push-scheduler.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    ScheduleModule.forRoot(),
     BullModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
@@ -62,6 +65,7 @@ import { ImportsModule } from './imports/imports.module';
     MessageAnalysisModule,
     WhatsappModule,
     ImportsModule,
+    PushSchedulerModule,
   ],
 })
 export class AppModule {}

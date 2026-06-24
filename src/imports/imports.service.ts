@@ -2,6 +2,7 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../infra/prisma/prisma.service';
 import { GeminiService } from '../infra/gemini/gemini.service';
+import { ExpoPushService } from '../infra/expo-push/expo-push.service';
 
 export type ExtractedRow = {
   clientName: string;
@@ -54,6 +55,7 @@ export class ImportsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly gemini: GeminiService,
+    private readonly expoPush: ExpoPushService,
   ) {}
 
   async extractTable(file: Express.Multer.File): Promise<ExtractedRow[]> {
@@ -86,12 +88,29 @@ export class ImportsService {
       results.push(await this.processRow(companyId, row, collectorId));
     }
 
+    const tasksCreated = results.filter((r) => r.taskCreated).length;
+
+    if (collectorId && tasksCreated > 0) {
+      void this.prisma.collector
+        .findFirst({ where: { id: collectorId }, select: { expoPushToken: true } })
+        .then((collector) => {
+          if (collector?.expoPushToken) {
+            void this.expoPush.send({
+              to: collector.expoPushToken,
+              title: 'Novas tarefas atribuidas',
+              body: `${tasksCreated} nova(s) tarefa(s) foram atribuidas a voce`,
+              data: { type: 'import' },
+            });
+          }
+        });
+    }
+
     return {
       total: rows.length,
       clientsCreated: results.filter((r) => r.clientAction === 'created').length,
       clientsFound: results.filter((r) => r.clientAction === 'found').length,
       collectionsCreated: results.filter((r) => r.collectionCreated).length,
-      tasksCreated: results.filter((r) => r.taskCreated).length,
+      tasksCreated,
       errors: results.filter((r) => !!r.error).length,
       rows: results,
     };
