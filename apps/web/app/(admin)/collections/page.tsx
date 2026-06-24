@@ -80,10 +80,44 @@ export default function CollectionsPage() {
   const [deletingCollection, setDeletingCollection] = useState<Collection | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [assignedCollectorId, setAssignedCollectorId] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   useEffect(() => {
-    if (data) setCollections(data);
+    if (data) { setCollections(data); setSelectedIds(new Set()); }
   }, [data]);
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll(selectAll: boolean) {
+    setSelectedIds(selectAll ? new Set(collections.map((c) => c.id)) : new Set());
+  }
+
+  async function handleBulkDelete() {
+    setBulkDeleting(true);
+    const ids = [...selectedIds];
+    const results = await Promise.allSettled(
+      ids.map((id) => apiRequest(`/collections/${id}`, { method: 'DELETE' })),
+    );
+    const deleted = ids.filter((_, i) => results[i].status === 'fulfilled');
+    setCollections((prev) => prev.filter((c) => !deleted.includes(c.id)));
+    setSelectedIds(new Set());
+    setShowBulkDeleteModal(false);
+    setBulkDeleting(false);
+    const failed = ids.length - deleted.length;
+    setSuccessMessage(
+      failed > 0
+        ? `${deleted.length} excluida(s). ${failed} nao puderam ser excluidas.`
+        : `${deleted.length} cobranca${deleted.length !== 1 ? 's' : ''} excluida${deleted.length !== 1 ? 's' : ''} com sucesso.`,
+    );
+  }
 
   function updateField(field: keyof CollectionFormState, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -194,6 +228,7 @@ export default function CollectionsPage() {
       setCollections((current) =>
         current.filter((c) => c.id !== deletingCollection.id),
       );
+      setSelectedIds((prev) => { const next = new Set(prev); next.delete(deletingCollection.id); return next; });
       setDeletingCollection(null);
       setSuccessMessage('Cobranca excluida com sucesso.');
     } catch (err: unknown) {
@@ -370,34 +405,66 @@ export default function CollectionsPage() {
       {loading ? <DataState message="Carregando cobrancas" /> : null}
       {error ? <DataState message={error} /> : null}
       {!loading && !error ? (
-        <DataTable
-          columns={['Titulo', 'Valor', 'Vencimento', 'Status', 'Cobrador', 'Acoes']}
-          rows={collections.map((collection) => {
-            const assignment = collectorByCollection.get(collection.id);
-            return [
-              <Link
-                key={`title-${collection.id}`}
-                href={`/collections/${collection.id}`}
-                className="font-medium text-brand hover:underline"
+        <>
+          {selectedIds.size > 0 ? (
+            <div className="mb-3 flex items-center gap-3 rounded-md border border-line bg-panel px-4 py-2">
+              <span className="text-sm font-medium text-ink">
+                {selectedIds.size} selecionada{selectedIds.size !== 1 ? 's' : ''}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowBulkDeleteModal(true)}
+                className="inline-flex min-h-8 items-center justify-center rounded-md bg-red-600 px-3 text-xs font-semibold text-white hover:bg-red-700"
               >
-                {collection.title}
-              </Link>,
-              formatCurrency(collection.amount),
-              formatDate(collection.dueDate),
-              <StatusPill key={`status-${collection.id}`} value={collection.status} />,
-              <CollectorCell
-                key={`collector-${collection.id}`}
-                assignment={assignment}
-              />,
-              <RowActions
-                key={`actions-${collection.id}`}
-                onEdit={() => openEdit(collection)}
-                onDelete={() => setDeletingCollection(collection)}
-              />,
-            ];
-          })}
-          emptyMessage="Nenhuma cobranca encontrada."
-        />
+                Excluir selecionadas
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedIds(new Set())}
+                className="text-xs text-muted hover:text-ink"
+              >
+                Limpar selecao
+              </button>
+            </div>
+          ) : null}
+          <DataTable
+            columns={['Titulo', 'Valor', 'Emissao', 'Vencimento', 'Dias Vencido', 'Status', 'Cobrador', 'Acoes']}
+            rowIds={collections.map((c) => c.id)}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelect}
+            onToggleAll={toggleAll}
+            rows={collections.map((collection) => {
+              const assignment = collectorByCollection.get(collection.id);
+              const daysOverdue = collection.dueDate
+                ? Math.floor((Date.now() - new Date(collection.dueDate).getTime()) / 86_400_000)
+                : null;
+              return [
+                <Link
+                  key={`title-${collection.id}`}
+                  href={`/collections/${collection.id}`}
+                  className="font-medium text-brand hover:underline"
+                >
+                  {collection.title}
+                </Link>,
+                formatCurrency(collection.amount),
+                collection.issuedAt ? formatDate(collection.issuedAt) : <span className="text-xs text-muted">—</span>,
+                formatDate(collection.dueDate),
+                <DaysOverdueCell key={`days-${collection.id}`} days={daysOverdue} />,
+                <StatusPill key={`status-${collection.id}`} value={collection.status} />,
+                <CollectorCell
+                  key={`collector-${collection.id}`}
+                  assignment={assignment}
+                />,
+                <RowActions
+                  key={`actions-${collection.id}`}
+                  onEdit={() => openEdit(collection)}
+                  onDelete={() => setDeletingCollection(collection)}
+                />,
+              ];
+            })}
+            emptyMessage="Nenhuma cobranca encontrada."
+          />
+        </>
       ) : null}
 
       {editingCollection ? (
@@ -431,7 +498,51 @@ export default function CollectionsPage() {
           </div>
         </Modal>
       ) : null}
+
+      {showBulkDeleteModal ? (
+        <Modal title="Excluir cobrancas selecionadas" onClose={() => setShowBulkDeleteModal(false)} maxWidth="sm">
+          <p className="mb-4 text-sm text-ink">
+            Tem certeza que deseja excluir{' '}
+            <strong>{selectedIds.size} cobranca{selectedIds.size !== 1 ? 's' : ''}</strong>?{' '}
+            Esta acao nao pode ser desfeita.
+          </p>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setShowBulkDeleteModal(false)}
+              className="inline-flex min-h-10 items-center justify-center rounded-md border border-line px-4 text-sm font-semibold text-ink hover:bg-panel"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+              className="inline-flex min-h-10 items-center justify-center rounded-md bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+            >
+              {bulkDeleting ? 'Excluindo...' : `Excluir ${selectedIds.size}`}
+            </button>
+          </div>
+        </Modal>
+      ) : null}
     </>
+  );
+}
+
+function DaysOverdueCell({ days }: { days: number | null }) {
+  if (days === null) return <span className="text-xs text-muted">—</span>;
+  if (days < 0) {
+    return (
+      <span className="text-xs font-medium text-green-700">
+        {Math.abs(days)}d restantes
+      </span>
+    );
+  }
+  if (days === 0) {
+    return <span className="text-xs font-medium text-yellow-600">Vence hoje</span>;
+  }
+  return (
+    <span className="text-xs font-semibold text-red-600">{days}d vencido</span>
   );
 }
 

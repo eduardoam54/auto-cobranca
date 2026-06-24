@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.105.0",
+    "@google/generative-ai": "^0.24.1",
     "@nestjs/bullmq": "^11.0.4",
     "@nestjs/common": "^10.4.15",
     "@nestjs/config": "^3.3.0",
@@ -36,7 +37,7 @@
     "class-validator": "^0.14.2",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
-    "pdf-parse": "^2.4.5",
+    "pdf-parse": "^1.1.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "xlsx": "^0.18.5"

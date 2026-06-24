@@ -5,9 +5,9 @@ import {
   SystemEventStatus,
   SystemEventType,
 } from '@prisma/client';
-import Anthropic from '@anthropic-ai/sdk';
+import { FunctionCallingMode, SchemaType } from '@google/generative-ai';
 import { SystemEventService } from '../../events/system-event.service';
-import { AnthropicService } from '../../infra/anthropic/anthropic.service';
+import { GeminiService } from '../../infra/gemini/gemini.service';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { AiIntent } from './enums/ai-intent.enum';
 import { AiPriority } from './enums/ai-priority.enum';
@@ -46,15 +46,16 @@ interface AnalyzeToolInput {
   risks: string[];
 }
 
-const ANALYZE_TOOL: Anthropic.Tool = {
+const ANALYZE_FUNCTION = {
   name: 'analyze_collection_message',
   description:
     'Analisa uma mensagem de cobrança via WhatsApp e retorna a intenção do cliente, prioridade, resumo e ação recomendada de forma estruturada.',
-  input_schema: {
-    type: 'object',
+  parameters: {
+    type: SchemaType.OBJECT,
     properties: {
       intent: {
-        type: 'string',
+        type: SchemaType.STRING,
+        format: 'enum',
         enum: [
           'payment_promise',
           'presencial_collection',
@@ -69,25 +70,25 @@ const ANALYZE_TOOL: Anthropic.Tool = {
         description: 'Intenção identificada na mensagem do cliente',
       },
       confidence: {
-        type: 'number',
-        description:
-          'Nível de confiança na classificação, entre 0.0 (baixo) e 1.0 (alto)',
+        type: SchemaType.NUMBER,
+        description: 'Nível de confiança na classificação, entre 0.0 (baixo) e 1.0 (alto)',
       },
       priority: {
-        type: 'string',
+        type: SchemaType.STRING,
+        format: 'enum',
         enum: ['low', 'medium', 'high', 'critical'],
         description: 'Prioridade da ação necessária',
       },
       summary: {
-        type: 'string',
-        description:
-          'Resumo em português brasileiro do que o cliente comunicou, considerando o contexto da cobrança',
+        type: SchemaType.STRING,
+        description: 'Resumo em português brasileiro do que o cliente comunicou',
       },
       recommendedAction: {
-        type: 'object',
+        type: SchemaType.OBJECT,
         properties: {
           type: {
-            type: 'string',
+            type: SchemaType.STRING,
+            format: 'enum',
             enum: [
               'create_task',
               'send_whatsapp_reply',
@@ -97,39 +98,29 @@ const ANALYZE_TOOL: Anthropic.Tool = {
             ],
           },
           responsible: {
-            type: 'string',
+            type: SchemaType.STRING,
+            format: 'enum',
             enum: ['collector', 'operator', 'system'],
-            description:
-              'Quem deve executar a ação (collector, operator, system) ou null se não houver ação',
+            description: 'Quem deve executar a ação',
           },
           messageToCollector: {
-            type: 'string',
-            description:
-              'Instrução para o cobrador, ou null se não for aplicável',
+            type: SchemaType.STRING,
+            description: 'Instrução para o cobrador',
           },
           messageToClient: {
-            type: 'string',
-            description:
-              'Mensagem sugerida para enviar ao cliente via WhatsApp, ou null se não for aplicável',
+            type: SchemaType.STRING,
+            description: 'Mensagem sugerida para enviar ao cliente via WhatsApp',
           },
         },
         required: ['type', 'responsible', 'messageToCollector', 'messageToClient'],
       },
       risks: {
-        type: 'array',
-        items: { type: 'string' },
-        description:
-          'Lista de riscos, alertas ou pontos de atenção relevantes para esta cobrança',
+        type: SchemaType.ARRAY,
+        items: { type: SchemaType.STRING },
+        description: 'Lista de riscos ou alertas relevantes para esta cobrança',
       },
     },
-    required: [
-      'intent',
-      'confidence',
-      'priority',
-      'summary',
-      'recommendedAction',
-      'risks',
-    ],
+    required: ['intent', 'confidence', 'priority', 'summary', 'recommendedAction', 'risks'],
   },
 };
 
@@ -168,7 +159,7 @@ export class AiCollectionAgentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly systemEventService: SystemEventService,
-    private readonly anthropicService: AnthropicService,
+    private readonly geminiService: GeminiService,
   ) {}
 
   async analyzeMessage(
@@ -296,9 +287,9 @@ export class AiCollectionAgentService {
     } | null,
     openCollectionsSummary: AiOpenCollectionsSummary,
   ): Promise<AnalysisResult> {
-    if (!this.anthropicService.isConfigured) {
+    if (!this.geminiService.isConfigured) {
       this.logger.warn(
-        'ANTHROPIC_API_KEY not configured — using mock analysis.',
+        'GEMINI_API_KEY not configured — using mock analysis.',
       );
       return this.analyzeMockedText(normalizedMessage, extractedData);
     }
@@ -365,25 +356,31 @@ export class AiCollectionAgentService {
       collectionsContext,
     ].join('\n');
 
-    const response = await this.anthropicService.client.messages.create({
-      model: 'claude-opus-4-8',
-      max_tokens: 4096,
-      thinking: { type: 'adaptive' },
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: userMessage }],
-      tools: [ANALYZE_TOOL],
-      tool_choice: { type: 'tool', name: 'analyze_collection_message' },
+    const model = this.geminiService.client.getGenerativeModel({
+      model: 'gemini-2.0-flash-lite',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      tools: [{ functionDeclarations: [ANALYZE_FUNCTION as any] }],
+      toolConfig: {
+        functionCallingConfig: {
+          mode: FunctionCallingMode.ANY,
+          allowedFunctionNames: ['analyze_collection_message'],
+        },
+      },
+      systemInstruction: SYSTEM_PROMPT,
     });
 
-    const toolUseBlock = response.content.find(
-      (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use',
-    );
+    const result = await model.generateContent({
+      contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+    });
 
-    if (!toolUseBlock) {
-      throw new Error('Claude did not return a tool_use block in response');
+    const functionCall = result.response.candidates?.[0]?.content?.parts
+      ?.find((p) => p.functionCall)?.functionCall;
+
+    if (!functionCall) {
+      throw new Error('Gemini did not return a function call in response');
     }
 
-    const input = toolUseBlock.input as AnalyzeToolInput;
+    const input = functionCall.args as AnalyzeToolInput;
 
     return {
       intent: input.intent as AiIntent,

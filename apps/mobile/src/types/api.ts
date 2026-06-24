@@ -134,3 +134,14 @@ export type CompleteTaskResponse = {
 };
 
 export type FailTaskResponse = CompleteTaskResponse;
+
+export type ClientVisit = {
+  id: string;
+  result: CollectionVisitResult;
+  notes?: string | null;
+  paymentReceived: boolean;
+  paymentAmount?: string | number | null;
+  paymentMethod?: PaymentMethod | null;
+  visitedAt: string;
+  collector?: { name: string } | null;
+};

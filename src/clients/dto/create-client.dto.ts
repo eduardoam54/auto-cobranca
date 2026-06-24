@@ -20,9 +20,9 @@ export class CreateClientDto {
   name: string;
 
   @IsString()
-  @IsNotEmpty()
+  @IsOptional()
   @MaxLength(32)
-  document: string;
+  document?: string;
 
   @IsString()
   @IsNotEmpty()

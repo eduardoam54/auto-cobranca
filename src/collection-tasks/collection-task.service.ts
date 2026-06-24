@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../infra/prisma/prisma.service';
+import { ExpoPushService } from '../infra/expo-push/expo-push.service';
 import { AssignCollectorDto } from './dto/assign-collector.dto';
 import { CompleteCollectionTaskDto } from './dto/complete-collection-task.dto';
 import { CreateCollectionTaskDto } from './dto/create-collection-task.dto';
@@ -12,7 +13,10 @@ import { UpdateCollectionTaskDto } from './dto/update-collection-task.dto';
 
 @Injectable()
 export class CollectionTaskService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly expoPush: ExpoPushService,
+  ) {}
 
   async create(companyId: string, createCollectionTaskDto: CreateCollectionTaskDto) {
     await this.validateRelations({
@@ -103,15 +107,32 @@ export class CollectionTaskService {
       companyId,
     );
 
-    return this.prisma.collectionTask.update({
-      where: {
-        id,
-      },
+    const updatedTask = await this.prisma.collectionTask.update({
+      where: { id },
       data: {
         collectorId: assignCollectorDto.collectorId,
         status: 'assigned',
       },
     });
+
+    // Fire-and-forget push notification
+    void this.prisma.collector
+      .findFirst({
+        where: { id: assignCollectorDto.collectorId },
+        select: { expoPushToken: true, name: true },
+      })
+      .then((collector) => {
+        if (collector?.expoPushToken) {
+          void this.expoPush.send({
+            to: collector.expoPushToken,
+            title: 'Nova tarefa atribuida',
+            body: updatedTask.title,
+            data: { taskId: updatedTask.id },
+          });
+        }
+      });
+
+    return updatedTask;
   }
 
   async start(companyId: string, id: string) {

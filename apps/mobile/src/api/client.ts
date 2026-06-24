@@ -1,16 +1,21 @@
 import { useCallback } from 'react';
 import axios, { AxiosError } from 'axios';
+import NetInfo from '@react-native-community/netinfo';
+import { enqueue } from '@/offline/offline-queue';
 
 type RequestOptions = {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   body?: unknown;
   auth?: boolean;
+  /** If set and the request is queued offline, upload this photo URI after the action syncs */
+  followUpPhotoUri?: string;
 };
 
 type TokenProvider = () => Promise<string | null> | string | null;
 type UnauthorizedHandler = () => Promise<void> | void;
 
-export const API_URL = 'http://192.168.1.3:3000/api';
+export const API_URL =
+  process.env.EXPO_PUBLIC_API_URL ?? 'http://10.0.2.2:3000/api';
 
 let tokenProvider: TokenProvider = () => null;
 let unauthorizedHandler: UnauthorizedHandler | null = null;
@@ -21,6 +26,13 @@ export class ApiError extends Error {
     readonly status: number,
   ) {
     super(message);
+  }
+}
+
+export class OfflineQueuedError extends Error {
+  constructor() {
+    super('Acao salva! Sera enviada ao servidor quando voce se conectar.');
+    this.name = 'OfflineQueuedError';
   }
 }
 
@@ -38,6 +50,15 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+async function isConnected(): Promise<boolean> {
+  try {
+    const state = await NetInfo.fetch();
+    return state.isConnected === true && state.isInternetReachable !== false;
+  } catch {
+    return true; // assume online if check fails
+  }
+}
 
 export async function apiUpload(path: string, formData: FormData): Promise<void> {
   const token = await tokenProvider();
@@ -61,6 +82,22 @@ export async function apiRequest<T>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
+  const method = options.method ?? 'GET';
+
+  // For mutating requests, check connectivity and queue if offline
+  if (method !== 'GET' && options.auth !== false) {
+    const online = await isConnected();
+    if (!online) {
+      await enqueue({
+        path,
+        method: method as 'POST' | 'PATCH' | 'DELETE',
+        body: options.body,
+        followUpPhotoUri: options.followUpPhotoUri,
+      });
+      throw new OfflineQueuedError();
+    }
+  }
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
@@ -75,7 +112,7 @@ export async function apiRequest<T>(
   try {
     const response = await api.request<T>({
       url: path,
-      method: options.method ?? 'GET',
+      method,
       headers,
       data: options.body,
     });

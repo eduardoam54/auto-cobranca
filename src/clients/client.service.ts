@@ -15,10 +15,15 @@ export class ClientService {
   async create(companyId: string, createClientDto: CreateClientDto) {
     await this.ensureActiveCompany(companyId);
 
+    const document =
+      createClientDto.document?.trim() ||
+      `CLI-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+
     try {
       return await this.prisma.client.create({
         data: {
           ...createClientDto,
+          document,
           companyId,
         },
       });

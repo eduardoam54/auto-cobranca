@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -73,6 +74,69 @@ export class MobileController {
     @Body() failMobileTaskDto: FailMobileTaskDto,
   ) {
     return this.mobileService.failTask(user, id, failMobileTaskDto);
+  }
+
+  @Get('my-progress')
+  myProgress(@CurrentUser() user: AuthenticatedUser) {
+    return this.mobileService.myProgress(user);
+  }
+
+  @Patch('tasks/reorder')
+  reorderTasks(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body('orderedIds') orderedIds: string[],
+  ) {
+    return this.mobileService.reorderTasks(user, orderedIds);
+  }
+
+  @Patch('push-token')
+  savePushToken(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body('token') token: string,
+  ) {
+    return this.mobileService.savePushToken(user, token);
+  }
+
+  @Get('ranking')
+  ranking(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('period') period: 'weekly' | 'monthly' = 'weekly',
+  ) {
+    return this.mobileService.ranking(user, period);
+  }
+
+  @Get('daily-report')
+  dailyReport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('date') date?: string,
+  ) {
+    return this.mobileService.dailyReport(user, date);
+  }
+
+  @Get('clients/:id/visits')
+  clientVisitHistory(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ) {
+    return this.mobileService.clientVisitHistory(user, id);
+  }
+
+  @Patch('clients/:id')
+  updateClient(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body()
+    body: {
+      phone?: string;
+      whatsappPhone?: string;
+      address?: string;
+      neighborhood?: string;
+      city?: string;
+      latitude?: number;
+      longitude?: number;
+    },
+  ) {
+    return this.mobileService.updateClient(user, id, body);
   }
 
   @Post('visits/:id/photo')

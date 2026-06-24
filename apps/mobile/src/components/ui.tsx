@@ -12,8 +12,12 @@ import type { ReactNode } from 'react';
 
 type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost';
 
-export function Screen({ children }: { children: ReactNode }) {
-  return <SafeAreaView style={styles.screen}>{children}</SafeAreaView>;
+export function Screen({ children, padding = true }: { children: ReactNode; padding?: boolean }) {
+  return (
+    <SafeAreaView style={[styles.screen, !padding && styles.screenNoPadding]}>
+      {children}
+    </SafeAreaView>
+  );
 }
 
 export function LoadingScreen({ message }: { message: string }) {
@@ -98,6 +102,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc',
     paddingHorizontal: 16,
     paddingTop: 12,
+  },
+  screenNoPadding: {
+    paddingHorizontal: 0,
+    paddingTop: 0,
   },
   loading: {
     flex: 1,

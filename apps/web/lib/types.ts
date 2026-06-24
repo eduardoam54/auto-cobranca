@@ -47,6 +47,7 @@ export type Collection = {
   title: string;
   description?: string | null;
   amount: string | number;
+  issuedAt?: string | null;
   dueDate: string;
   status: string;
   paymentMethod?: string | null;

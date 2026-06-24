@@ -16,14 +16,25 @@
       }
     },
     "android": {
+      "package": "com.autocobranca.cobrador",
+      "usesCleartextTraffic": true,
       "permissions": [
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.INTERNET",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "plugins": [
       "expo-router",
+      "expo-notifications",
+      [
+        "react-native-maps",
+        {
+          "googleMapsApiKey": ""
+        }
+      ],
       [
         "expo-location",
         {
@@ -39,6 +50,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "eee68fc7-5051-48fa-bf66-2bc6aa04eaa7"
+      }
+    },
+    "owner": "eduardo54"
   }
 }

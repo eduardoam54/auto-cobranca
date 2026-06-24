@@ -3,6 +3,8 @@ import type { ReactNode } from 'react';
 import {
   Alert,
   Image,
+  Linking,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,9 +15,10 @@ import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { AppButton, FormField, LoadingScreen, Screen } from '@/components/ui';
-import { useApiClient } from '@/api/client';
+import { OfflineQueuedError, useApiClient } from '@/api/client';
 import { useProtectedRoute } from '@/auth/auth-context';
 import type {
+  ClientVisit,
   CollectionVisitResult,
   CompleteTaskResponse,
   FailTaskResponse,
@@ -92,7 +95,13 @@ export default function TaskDetailScreen() {
   const [notes, setNotes] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [capturedLocation, setCapturedLocation] = useState<CapturedLocation | null>(null);
+  const [gpsDenied, setGpsDenied] = useState(false);
+  const [gpsCapturing, setGpsCapturing] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
+  const [promisedDate, setPromisedDate] = useState('');
+  const [visitHistory, setVisitHistory] = useState<ClientVisit[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const taskId = Array.isArray(id) ? id[0] : id;
 
@@ -119,7 +128,11 @@ export default function TaskDetailScreen() {
   async function captureLocation(): Promise<CapturedLocation | null> {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return null;
+      if (status !== 'granted') {
+        setGpsDenied(true);
+        return null;
+      }
+      setGpsDenied(false);
       const loc = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
       });
@@ -142,9 +155,33 @@ export default function TaskDetailScreen() {
     setPaymentMethod('cash');
     setNotes('');
     setPhotoUri(null);
+    setPromisedDate('');
+    setGpsDenied(false);
+    setGpsCapturing(true);
     setError(null);
     const loc = await captureLocation();
     if (loc) setCapturedLocation(loc);
+    setGpsCapturing(false);
+  }
+
+  // ── Visit history ────────────────────────────────────────────────────────
+
+  async function handleToggleHistory() {
+    if (historyOpen) {
+      setHistoryOpen(false);
+      return;
+    }
+    setHistoryOpen(true);
+    if (visitHistory.length > 0 || !task?.clientId) return;
+    setHistoryLoading(true);
+    try {
+      const data = await request<ClientVisit[]>(`/mobile/clients/${task.clientId}/visits`);
+      setVisitHistory(data);
+    } catch {
+      // silently fail — section just shows empty
+    } finally {
+      setHistoryLoading(false);
+    }
   }
 
   // ── Photo ─────────────────────────────────────────────────────────────────
@@ -221,6 +258,7 @@ export default function TaskDetailScreen() {
               longitude: location?.longitude,
               locationAccuracy: location?.accuracy ?? undefined,
             },
+            followUpPhotoUri: photoUri ?? undefined,
           },
         );
         visitId = res.visit.id;
@@ -236,13 +274,16 @@ export default function TaskDetailScreen() {
               latitude: location?.latitude,
               longitude: location?.longitude,
               locationAccuracy: location?.accuracy ?? undefined,
+              promisedPaymentDate: dateToISO(promisedDate),
             },
+            followUpPhotoUri: photoUri ?? undefined,
           },
         );
         visitId = res.visit.id;
         setTask({ ...task, ...res.task });
       }
 
+      // Online: upload photo immediately
       if (photoUri && visitId) {
         try {
           const formData = new FormData();
@@ -262,6 +303,12 @@ export default function TaskDetailScreen() {
         { text: 'Ok', onPress: () => router.replace('/tasks') },
       ]);
     } catch (e) {
+      if (e instanceof OfflineQueuedError) {
+        Alert.alert('Salvo offline', e.message, [
+          { text: 'Ok', onPress: () => router.replace('/tasks') },
+        ]);
+        return;
+      }
       setError(e instanceof Error ? e.message : 'Erro ao registrar resultado.');
     } finally {
       setActionLoading(false);
@@ -303,6 +350,9 @@ export default function TaskDetailScreen() {
           {task.description ? <Text style={s.bodyText}>{task.description}</Text> : null}
         </View>
 
+        {/* Navigate button */}
+        <NavigateButton task={task} />
+
         {/* Client */}
         <Section title="Cliente">
           <Info label="Nome" value={task.client?.name} />
@@ -310,6 +360,7 @@ export default function TaskDetailScreen() {
           <Info label="Bairro" value={task.client?.neighborhood} />
           <Info label="Endereco" value={getTaskAddress(task)} />
           <Info label="Observacoes" value={task.client?.notes} />
+          <ClientQuickActions task={task} />
         </Section>
 
         {/* Collection */}
@@ -341,6 +392,24 @@ export default function TaskDetailScreen() {
           </View>
         ) : null}
 
+        {/* Histórico de visitas */}
+        <TouchableOpacity style={s.historyToggle} onPress={handleToggleHistory} activeOpacity={0.7}>
+          <Text style={s.historyToggleText}>
+            {historyOpen ? 'Ocultar visitas anteriores' : 'Ver visitas anteriores'}
+          </Text>
+        </TouchableOpacity>
+        {historyOpen ? (
+          <View style={s.historyCard}>
+            {historyLoading ? (
+              <Text style={s.historyEmpty}>Carregando...</Text>
+            ) : visitHistory.length === 0 ? (
+              <Text style={s.historyEmpty}>Nenhuma visita anterior registrada.</Text>
+            ) : (
+              visitHistory.map((v) => <VisitHistoryItem key={v.id} visit={v} />)
+            )}
+          </View>
+        ) : null}
+
         {/* Start button */}
         {canStart && !formOpen ? (
           <AppButton
@@ -367,12 +436,27 @@ export default function TaskDetailScreen() {
             {/* GPS status */}
             {capturedLocation ? (
               <View style={s.gpsBadge}>
-                <Text style={s.gpsBadgeText}>Localizacao GPS capturada</Text>
+                <Text style={s.gpsBadgeText}>✅ Localização GPS capturada</Text>
+              </View>
+            ) : gpsDenied ? (
+              <View style={[s.gpsBadge, s.gpsBadgeDenied]}>
+                <Text style={[s.gpsBadgeText, s.gpsBadgeTextDenied]}>
+                  ⚠️ GPS negado — visita será registrada sem localização
+                </Text>
+                <Text style={s.gpsBadgeHint}>
+                  Para ativar: Configurações → Aplicativos → Permissões → Localização
+                </Text>
+              </View>
+            ) : gpsCapturing ? (
+              <View style={[s.gpsBadge, s.gpsBadgePending]}>
+                <Text style={[s.gpsBadgeText, s.gpsBadgeTextPending]}>
+                  📡 Capturando localização...
+                </Text>
               </View>
             ) : (
               <View style={[s.gpsBadge, s.gpsBadgePending]}>
                 <Text style={[s.gpsBadgeText, s.gpsBadgeTextPending]}>
-                  Capturando localizacao...
+                  GPS não disponível
                 </Text>
               </View>
             )}
@@ -434,6 +518,18 @@ export default function TaskDetailScreen() {
               </>
             ) : null}
 
+            {/* Data de promessa (só para promised_payment) */}
+            {selectedResult === 'promised_payment' ? (
+              <FormField
+                label="Data prometida para pagamento"
+                value={promisedDate}
+                onChangeText={(text) => setPromisedDate(maskDate(text))}
+                keyboardType="numeric"
+                placeholder="DD/MM/AAAA"
+                maxLength={10}
+              />
+            ) : null}
+
             {/* Notes */}
             <FormField
               label="Observacao (opcional)"
@@ -490,6 +586,96 @@ export default function TaskDetailScreen() {
   );
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function maskDate(text: string): string {
+  const digits = text.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function dateToISO(date: string): string | undefined {
+  const parts = date.split('/');
+  if (parts.length !== 3 || parts[2].length !== 4) return undefined;
+  return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+}
+
+// ─── NavigateButton ───────────────────────────────────────────────────────────
+
+export function openNavigation(task: MobileTask) {
+  const address = getTaskAddress(task);
+  const lat = task.client?.latitude;
+  const lon = task.client?.longitude;
+
+  if (lat && lon) {
+    Linking.openURL(
+      `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving`,
+    ).catch(() =>
+      Linking.openURL(`https://www.google.com/maps?q=${lat},${lon}`),
+    );
+  } else if (address) {
+    Linking.openURL(
+      `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}&travelmode=driving`,
+    );
+  } else {
+    Alert.alert('Sem localização', 'Este cliente não possui endereço ou coordenadas cadastradas.');
+  }
+}
+
+function NavigateButton({ task }: { task: MobileTask }) {
+  const address = getTaskAddress(task);
+  const lat = task.client?.latitude;
+  const lon = task.client?.longitude;
+  const hasLocation = !!(lat && lon) || !!address;
+  if (!hasLocation) return null;
+
+  return (
+    <TouchableOpacity
+      style={s.navigateBtn}
+      onPress={() => openNavigation(task)}
+      activeOpacity={0.85}
+    >
+      <Text style={s.navigateBtnIcon}>🧭</Text>
+      <View>
+        <Text style={s.navigateBtnLabel}>Navegar até o cliente</Text>
+        <Text style={s.navigateBtnSub}>
+          {lat && lon ? `${lat.toFixed(5)}, ${lon.toFixed(5)}` : address}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// ─── ClientQuickActions ───────────────────────────────────────────────────────
+
+function ClientQuickActions({ task }: { task: MobileTask }) {
+  const phone = task.client?.whatsappPhone ?? task.client?.phone;
+  const cleanPhone = phone?.replace(/\D/g, '') ?? '';
+  const phoneWithCountry = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
+
+  const hasPhone = cleanPhone.length > 0;
+  if (!hasPhone) return null;
+
+  const openCall = () => Linking.openURL(`tel:${cleanPhone}`);
+
+  const openWhatsApp = () =>
+    Linking.openURL(`whatsapp://send?phone=${phoneWithCountry}`).catch(() =>
+      Linking.openURL(`https://wa.me/${phoneWithCountry}`),
+    );
+
+  return (
+    <View style={s.quickActions}>
+      <TouchableOpacity style={[s.qaBtn, s.qaBtnCall]} onPress={openCall} activeOpacity={0.8}>
+        <Text style={s.qaBtnText}>📞 Ligar</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={[s.qaBtn, s.qaBtnWA]} onPress={openWhatsApp} activeOpacity={0.8}>
+        <Text style={s.qaBtnText}>💬 WhatsApp</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: string }) {
@@ -505,6 +691,48 @@ function StatusBadge({ status }: { status: string }) {
   return (
     <View style={[s.badge, { backgroundColor: colors.bg }]}>
       <Text style={[s.badgeText, { color: colors.text }]}>{status}</Text>
+    </View>
+  );
+}
+
+function VisitHistoryItem({ visit }: { visit: ClientVisit }) {
+  const RESULT_LABELS: Record<string, string> = {
+    paid: 'Pago',
+    partial_paid: 'Parcial',
+    promised_payment: 'Prometeu pagar',
+    not_home: 'Ausente',
+    refused_payment: 'Recusou',
+    rescheduled: 'Reagendado',
+    wrong_address: 'End. errado',
+    other: 'Outro',
+  };
+  const RESULT_COLORS: Record<string, string> = {
+    paid: '#166534',
+    partial_paid: '#0f766e',
+    promised_payment: '#92400e',
+    not_home: '#374151',
+    refused_payment: '#991b1b',
+    rescheduled: '#1e40af',
+    wrong_address: '#7c2d12',
+    other: '#374151',
+  };
+  const color = RESULT_COLORS[visit.result] ?? '#374151';
+  const date = new Date(visit.visitedAt).toLocaleDateString('pt-BR');
+  return (
+    <View style={s.historyItem}>
+      <View style={s.historyItemTop}>
+        <Text style={[s.historyResult, { color }]}>
+          {RESULT_LABELS[visit.result] ?? visit.result}
+        </Text>
+        <Text style={s.historyDate}>{date}</Text>
+      </View>
+      {visit.paymentReceived && visit.paymentAmount ? (
+        <Text style={s.historyAmount}>{formatCurrency(Number(visit.paymentAmount))}</Text>
+      ) : null}
+      {visit.notes ? <Text style={s.historyNotes}>{visit.notes}</Text> : null}
+      {visit.collector?.name ? (
+        <Text style={s.historyCollector}>Cobrador: {visit.collector.name}</Text>
+      ) : null}
     </View>
   );
 }
@@ -597,10 +825,14 @@ const s = StyleSheet.create({
     borderColor: '#bbf7d0',
     paddingHorizontal: 12,
     paddingVertical: 8,
+    gap: 4,
   },
   gpsBadgePending: { backgroundColor: '#fafafa', borderColor: '#e2e8f0' },
+  gpsBadgeDenied: { backgroundColor: '#fff7ed', borderColor: '#fed7aa' },
   gpsBadgeText: { color: '#166534', fontSize: 12, fontWeight: '700' },
   gpsBadgeTextPending: { color: '#94a3b8' },
+  gpsBadgeTextDenied: { color: '#92400e' },
+  gpsBadgeHint: { color: '#b45309', fontSize: 11 },
 
   // Result grid
   resultGrid: {
@@ -640,6 +872,65 @@ const s = StyleSheet.create({
     resizeMode: 'cover',
     backgroundColor: '#f1f5f9',
   },
+
+  // Visit history
+  historyToggle: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    backgroundColor: '#f8fafc',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+  },
+  historyToggleText: { color: '#475569', fontSize: 13, fontWeight: '700' },
+  historyCard: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#dbe3ea',
+    backgroundColor: '#ffffff',
+    padding: 12,
+    gap: 10,
+  },
+  historyEmpty: { color: '#94a3b8', fontSize: 13, textAlign: 'center', paddingVertical: 8 },
+  historyItem: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    paddingBottom: 10,
+    gap: 3,
+  },
+  historyItemTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  historyResult: { fontSize: 13, fontWeight: '700' },
+  historyDate: { fontSize: 12, color: '#94a3b8' },
+  historyAmount: { fontSize: 14, fontWeight: '800', color: '#166534' },
+  historyNotes: { fontSize: 12, color: '#64748b', fontStyle: 'italic' },
+  historyCollector: { fontSize: 11, color: '#94a3b8' },
+
+  // Navigate button
+  navigateBtn: {
+    borderRadius: 12,
+    backgroundColor: '#0f766e',
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    shadowColor: '#0f766e',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  navigateBtnIcon: { fontSize: 28 },
+  navigateBtnLabel: { color: '#ffffff', fontSize: 16, fontWeight: '800' },
+  navigateBtnSub: { color: '#99f6e4', fontSize: 12, marginTop: 2 },
+
+  // Quick actions
+  quickActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  qaBtn: { flex: 1, minWidth: 80, borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
+  qaBtnCall: { backgroundColor: '#0369a1' },
+  qaBtnWA: { backgroundColor: '#166534' },
+  qaBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 13 },
 
   // Form actions
   formActions: { gap: 8 },

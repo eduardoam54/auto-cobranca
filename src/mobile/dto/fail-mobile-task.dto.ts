@@ -43,4 +43,8 @@ export class FailMobileTaskDto {
   @IsDateString()
   @IsOptional()
   visitedAt?: string;
+
+  @IsDateString()
+  @IsOptional()
+  promisedPaymentDate?: string;
 }

@@ -126,6 +126,7 @@ model Collector {
   active           Boolean           @default(true)
   currentLatitude  Float?
   currentLongitude Float?
+  expoPushToken    String?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   deletedAt        DateTime?
@@ -157,6 +158,7 @@ model CollectionTask {
   status           CollectionTaskStatus   @default(pending)
   scheduledDate    DateTime?
   scheduledTime    String?
+  sortOrder        Int?
   address          String?
   latitude         Float?
   longitude        Float?
