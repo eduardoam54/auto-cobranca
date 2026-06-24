@@ -1,8 +1,26 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as Updates from 'expo-updates';
+import { useEffect } from 'react';
 import { AuthProvider } from '@/auth/auth-context';
 
+async function checkForUpdate() {
+  try {
+    const update = await Updates.checkForUpdateAsync();
+    if (update.isAvailable) {
+      await Updates.fetchUpdateAsync();
+      await Updates.reloadAsync();
+    }
+  } catch {
+    // em desenvolvimento ou sem conexão — ignora silenciosamente
+  }
+}
+
 export default function RootLayout() {
+  useEffect(() => {
+    void checkForUpdate();
+  }, []);
+
   return (
     <AuthProvider>
       <StatusBar style="dark" />
