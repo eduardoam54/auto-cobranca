@@ -311,7 +311,8 @@ describe('Auto-Cobranca API e2e', () => {
       .patch(`/api/mobile/tasks/${failTaskId}/fail`)
       .set('Authorization', `Bearer ${collectorToken}`)
       .send({
-        reason: 'Cliente nao estava em casa',
+        result: 'not_home',
+        notes: 'Cliente nao estava em casa',
         latitude: -14.654321,
         longitude: -41.654321,
         locationAccuracy: 30,
@@ -319,9 +320,9 @@ describe('Auto-Cobranca API e2e', () => {
       })
       .expect(200)
       .expect((res) => {
-        expect(res.body.status).toBe('failed');
-        expect(res.body.collectorId).toBe(collectorId);
-        expect(res.body.visit.result).toBe('other');
+        expect(res.body.task.status).toBe('failed');
+        expect(res.body.task.collectorId).toBe(collectorId);
+        expect(res.body.visit.result).toBe('not_home');
         expect(res.body.visit.notes).toBe('Cliente nao estava em casa');
         expect(res.body.visit.latitude).toBe(-14.654321);
         expect(res.body.visit.longitude).toBe(-41.654321);
