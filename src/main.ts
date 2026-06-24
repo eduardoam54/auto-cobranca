@@ -12,7 +12,7 @@ async function bootstrap() {
 
   app.enableCors({
     origin: isDev
-      ? (origin, cb) => cb(null, true) // allow all origins in dev
+      ? (origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) => cb(null, true)
       : frontendUrl || false,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
