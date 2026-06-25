@@ -501,7 +501,7 @@ function ComboField({
             <div className="px-3 py-3 text-center">
               <p className="text-xs text-muted">Nenhum cadastrado ainda.</p>
               {value.trim() ? (
-                <p className="mt-0.5 text-xs font-medium text-ink">"{value}" sera adicionado como novo.</p>
+                <p className="mt-0.5 text-xs font-medium text-ink">&quot;{value}&quot; sera adicionado como novo.</p>
               ) : null}
             </div>
           )}
