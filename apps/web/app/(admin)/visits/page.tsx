@@ -6,6 +6,7 @@ import { Modal } from '@/components/modal';
 import { PageHeader } from '@/components/page-header';
 import { StatusPill } from '@/components/status-pill';
 import { formatCurrency, formatDateTime } from '@/lib/format';
+import { toLabel } from '@/lib/labels';
 import { useApiData } from '@/lib/use-api-data';
 import type { Client, CollectionVisit, Collector } from '@/lib/types';
 
@@ -239,7 +240,7 @@ function VisitDetailModal({
             </p>
             {visit.paymentMethod ? (
               <p className="text-xs text-emerald-600">
-                Forma: {visit.paymentMethod.replaceAll('_', ' ')}
+                Forma: {toLabel(visit.paymentMethod)}
               </p>
             ) : null}
           </div>

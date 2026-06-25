@@ -11,6 +11,7 @@ import {
   formatDateTime,
   formatText,
 } from '@/lib/format';
+import { toLabel } from '@/lib/labels';
 import { useApiData } from '@/lib/use-api-data';
 import type {
   Client,
@@ -19,15 +20,6 @@ import type {
   CollectionVisit,
   Collector,
 } from '@/lib/types';
-
-const TYPE_LABELS: Record<string, string> = {
-  presencial_collection: 'Visita presencial',
-  whatsapp_followup: 'Followup WhatsApp',
-  phone_call: 'Ligacao',
-  payment_confirmation: 'Confirmacao de pagamento',
-  renegotiation_followup: 'Followup renegociacao',
-  other: 'Outro',
-};
 
 const MEDIA_BASE = (
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000/api'
@@ -112,7 +104,7 @@ export default function CollectionTaskDetailPage({
             <StatusPill value={task.status} />
             <StatusPill value={task.priority} />
             <span className="text-xs text-muted">
-              {TYPE_LABELS[task.type] ?? task.type}
+              {toLabel(task.type)}
             </span>
           </div>
           <PageHeader title={task.title} description={task.description ?? ''} />

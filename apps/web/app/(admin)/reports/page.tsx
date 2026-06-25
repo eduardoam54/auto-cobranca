@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { DataState } from '@/components/data-state';
 import { PageHeader } from '@/components/page-header';
 import { formatCurrency } from '@/lib/format';
+import { toLabel } from '@/lib/labels';
 import { useApiData } from '@/lib/use-api-data';
 import type { Client, CollectionVisit, Collector } from '@/lib/types';
 
@@ -142,7 +143,7 @@ export default function ReportsPage() {
     return Object.entries(methods)
       .sort((a, b) => b[1].count - a[1].count)
       .map(([method, data]) => ({
-        method: method.replace(/_/g, ' '),
+        method: toLabel(method),
         count: data.count,
         total: data.total,
         pct: Math.round((data.count / paid.length) * 100),
@@ -277,7 +278,7 @@ export default function ReportsPage() {
               <div className="space-y-2">
                 {paymentMethodStats.map((m) => (
                   <div key={m.method} className="flex items-center gap-3">
-                    <span className="w-28 text-xs capitalize text-muted">{m.method}</span>
+                    <span className="w-28 text-xs text-muted">{m.method}</span>
                     <div className="relative flex-1 h-5 rounded bg-line overflow-hidden">
                       <div
                         className="absolute inset-y-0 left-0 rounded bg-brand"

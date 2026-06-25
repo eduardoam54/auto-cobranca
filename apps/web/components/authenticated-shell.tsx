@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { clearToken, getToken } from '@/lib/auth';
 
 const navigation = [
-  { href: '/dashboard', label: 'Dashboard' },
+  { href: '/dashboard', label: 'Painel' },
   { href: '/clients', label: 'Clientes' },
   { href: '/collections', label: 'Cobrancas' },
   { href: '/collectors', label: 'Cobradores' },

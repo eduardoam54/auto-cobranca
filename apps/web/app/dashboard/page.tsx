@@ -14,11 +14,11 @@ export default function DashboardPage() {
   return (
     <AuthenticatedShell>
       <PageHeader
-        title="Dashboard"
-        description="Resumo operacional das cobrancas, tarefas e recebimentos."
+        title="Painel"
+        description="Resumo operacional das cobranças, tarefas e recebimentos."
       />
 
-      {loading ? <DataState message="Carregando dashboard" /> : null}
+      {loading ? <DataState message="Carregando painel" /> : null}
       {error ? <DataState message={error} /> : null}
       {data ? <DashboardContent data={data} /> : null}
     </AuthenticatedShell>

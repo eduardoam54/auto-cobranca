@@ -13,6 +13,7 @@ import { StatusPill } from '@/components/status-pill';
 import { TextField } from '@/components/text-field';
 import { ApiError, apiRequest } from '@/lib/api';
 import { formatCurrency, formatDate, formatText } from '@/lib/format';
+import { toLabel } from '@/lib/labels';
 import { useApiData } from '@/lib/use-api-data';
 import type { Client, Collection, CollectionTask, Collector } from '@/lib/types';
 
@@ -37,12 +38,12 @@ const emptyForm: CollectionFormState = {
 };
 
 const statusOptions = ['pending', 'overdue', 'paid', 'canceled', 'renegotiated'].map(
-  (s) => ({ value: s, label: formatLabel(s) }),
+  (s) => ({ value: s, label: toLabel(s) }),
 );
 
 const paymentMethodOptions = [
   'cash', 'pix', 'bank_slip', 'credit_card', 'debit_card', 'other',
-].map((m) => ({ value: m, label: formatLabel(m) }));
+].map((m) => ({ value: m, label: toLabel(m) }));
 
 const requiredFields = [
   { key: 'clientId', label: 'cliente' },
@@ -563,11 +564,11 @@ function CollectorCell({
       <span className="text-sm font-medium text-ink">{assignment.name}</span>
       {isActive ? (
         <span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs font-semibold text-brand">
-          {assignment.status === 'in_progress' ? 'em andamento' : 'atribuido'}
+          {assignment.status === 'in_progress' ? 'Em andamento' : 'Atribuído'}
         </span>
       ) : (
         <span className="rounded-full bg-panel px-2 py-0.5 text-xs text-muted">
-          {assignment.status}
+          {toLabel(assignment.status)}
         </span>
       )}
     </span>
@@ -611,6 +612,3 @@ function buildCollectionPayload(form: CollectionFormState, amount: number) {
   return payload;
 }
 
-function formatLabel(value: string) {
-  return value.replaceAll('_', ' ');
-}

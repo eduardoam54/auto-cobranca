@@ -12,7 +12,8 @@ import { SelectField } from '@/components/select-field';
 import { StatusPill } from '@/components/status-pill';
 import { TextField } from '@/components/text-field';
 import { ApiError, apiRequest } from '@/lib/api';
-import { formatText, shortId } from '@/lib/format';
+import { shortId } from '@/lib/format';
+import { toLabel } from '@/lib/labels';
 import { useApiData } from '@/lib/use-api-data';
 import type { Client, Collection, CollectionTask, Collector } from '@/lib/types';
 
@@ -55,16 +56,16 @@ const taskTypeOptions = [
   'payment_confirmation',
   'renegotiation_followup',
   'other',
-].map((t) => ({ value: t, label: formatLabel(t) }));
+].map((t) => ({ value: t, label: toLabel(t) }));
 
 const taskPriorityOptions = ['low', 'medium', 'high', 'critical'].map((p) => ({
   value: p,
-  label: formatLabel(p),
+  label: toLabel(p),
 }));
 
 const taskStatusOptions = ['pending', 'assigned', 'in_progress', 'completed'].map((s) => ({
   value: s,
-  label: formatLabel(s),
+  label: toLabel(s),
 }));
 
 export default function CollectionTasksPage() {
@@ -260,8 +261,8 @@ export default function CollectionTasksPage() {
             task.collectorId
               ? (collectorNameById.get(task.collectorId) ?? shortId(task.collectorId))
               : '—',
-            formatLabel(task.type),
-            formatLabel(task.priority),
+            toLabel(task.type),
+            toLabel(task.priority),
             <StatusPill key={`st-${task.id}`} value={task.status} />,
             <TaskActions
               key={`act-${task.id}`}
@@ -282,7 +283,7 @@ export default function CollectionTasksPage() {
                 <p className="text-xs font-semibold uppercase text-muted">Tarefa selecionada</p>
                 <p className="mt-1 text-sm font-semibold text-ink">{selectedTask.title}</p>
                 <p className="mt-1 text-xs text-muted">
-                  Status atual: {formatLabel(selectedTask.status)}
+                  Status atual: {toLabel(selectedTask.status)}
                 </p>
               </div>
               <SelectField
@@ -501,7 +502,3 @@ function parseOptionalNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function formatLabel(value: string | null | undefined) {
-  if (!value) return '—';
-  return value.replaceAll('_', ' ');
-}

@@ -7,6 +7,7 @@ import { FormActions } from '@/components/form-actions';
 import { Modal } from '@/components/modal';
 import { PageHeader } from '@/components/page-header';
 import { ApiError, apiRequest } from '@/lib/api';
+import { toLabel } from '@/lib/labels';
 import { useApiData } from '@/lib/use-api-data';
 import type { Message } from '@/lib/types';
 
@@ -132,9 +133,9 @@ export default function MessagesPage() {
             <p className="text-sm text-ink">{replyTarget.content}</p>
             {replyTarget.aiIntent ? (
               <p className="mt-2 text-xs text-muted">
-                Intencao detectada:{' '}
+                Intenção detectada:{' '}
                 <span className="font-medium text-brand">
-                  {replyTarget.aiIntent.replaceAll('_', ' ')}
+                  {toLabel(replyTarget.aiIntent)}
                 </span>
               </p>
             ) : null}
@@ -184,7 +185,7 @@ function MessageCard({
           <span className="font-medium text-ink">{message.phone}</span>
           {message.aiIntent ? (
             <span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs font-medium text-brand">
-              {message.aiIntent.replaceAll('_', ' ')}
+              {toLabel(message.aiIntent)}
             </span>
           ) : null}
           {message.aiAnalyzed === false ? (
@@ -235,7 +236,7 @@ function OutboundCard({ message }: { message: Message }) {
               : 'bg-panel text-muted'
           }`}
         >
-          {isAuto ? 'enviada' : message.status}
+          {isAuto ? 'Enviada' : toLabel(message.status)}
         </span>
       </div>
       <p className="text-sm text-muted">{message.content}</p>
