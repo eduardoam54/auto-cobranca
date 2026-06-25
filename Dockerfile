@@ -5,8 +5,9 @@ COPY prisma ./prisma/
 RUN npm ci
 RUN npx prisma generate
 COPY . .
-ARG CACHEBUST=1
+ARG CACHEBUST=2
 RUN npm run build
+RUN ls -la /app/dist/ && test -f /app/dist/main.js
 
 FROM node:20-alpine AS production
 WORKDIR /app
@@ -15,6 +16,7 @@ COPY prisma ./prisma/
 RUN npm ci --omit=dev
 RUN npx prisma generate
 COPY --from=builder /app/dist ./dist
+RUN ls -la /app/dist/ && test -f /app/dist/main.js
 
 EXPOSE 3000
 CMD npx prisma migrate deploy && node dist/main.js
