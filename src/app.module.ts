@@ -39,6 +39,8 @@ import { PushSchedulerModule } from './modules/push-scheduler/push-scheduler.mod
           connection: {
             host: url.hostname,
             port: parseInt(url.port || '6379'),
+            password: url.password || undefined,
+            username: url.username || undefined,
           },
         };
       },
