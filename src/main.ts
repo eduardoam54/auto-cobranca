@@ -11,11 +11,15 @@ async function bootstrap() {
   const isDev = configService.get<string>('NODE_ENV', 'development') !== 'production';
 
   app.enableCors({
-    origin: isDev
-      ? (origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) => cb(null, true)
-      : frontendUrl || false,
+    origin: (origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) => {
+      if (isDev || !origin) return cb(null, true);
+      const allowed = frontendUrl ? frontendUrl.split(',').map((s) => s.trim()) : [];
+      if (allowed.length === 0 || allowed.includes(origin)) return cb(null, true);
+      cb(new Error('Not allowed by CORS'));
+    },
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
   });
   app.setGlobalPrefix('api');
   app.useGlobalPipes(
