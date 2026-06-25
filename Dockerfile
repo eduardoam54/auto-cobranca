@@ -5,6 +5,7 @@ COPY prisma ./prisma/
 RUN npm ci
 RUN npx prisma generate
 COPY . .
+ARG CACHEBUST=1
 RUN npm run build
 
 FROM node:20-alpine AS production
