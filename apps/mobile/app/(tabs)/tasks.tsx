@@ -406,10 +406,19 @@ function StatusBadge({ status }: { status: string }) {
     completed:   { bg: '#dcfce7', text: '#166534' },
     failed:      { bg: '#fee2e2', text: '#991b1b' },
   };
+  const labelMap: Record<string, string> = {
+    pending:     'Pendente',
+    assigned:    'Atribuída',
+    in_progress: 'Em andamento',
+    completed:   'Concluída',
+    failed:      'Falhou',
+    canceled:    'Cancelada',
+  };
   const colors = colorMap[status] ?? { bg: '#f1f5f9', text: '#475569' };
+  const label = labelMap[status] ?? status;
   return (
     <View style={[s.statusBadge, { backgroundColor: colors.bg }]}>
-      <Text style={[s.statusBadgeText, { color: colors.text }]}>{status}</Text>
+      <Text style={[s.statusBadgeText, { color: colors.text }]}>{label}</Text>
     </View>
   );
 }
