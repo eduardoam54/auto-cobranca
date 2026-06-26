@@ -69,10 +69,44 @@ export default function CollectorsPage() {
   const [editingCollector, setEditingCollector] = useState<Collector | null>(null);
   const [deletingCollector, setDeletingCollector] = useState<Collector | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   useEffect(() => {
-    if (data) setCollectors(data);
+    if (data) { setCollectors(data); setSelectedIds(new Set()); }
   }, [data]);
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll(selectAll: boolean) {
+    setSelectedIds(selectAll ? new Set(collectors.map((c) => c.id)) : new Set());
+  }
+
+  async function handleBulkDelete() {
+    setBulkDeleting(true);
+    const ids = [...selectedIds];
+    const results = await Promise.allSettled(
+      ids.map((id) => apiRequest(`/collectors/${id}`, { method: 'DELETE' })),
+    );
+    const deleted = ids.filter((_, i) => results[i].status === 'fulfilled');
+    setCollectors((prev) => prev.filter((c) => !deleted.includes(c.id)));
+    setSelectedIds(new Set());
+    setShowBulkDeleteModal(false);
+    setBulkDeleting(false);
+    const failed = ids.length - deleted.length;
+    setSuccessMessage(
+      failed > 0
+        ? `${deleted.length} excluido(s). ${failed} nao puderam ser excluidos.`
+        : `${deleted.length} cobrador${deleted.length !== 1 ? 'es' : ''} excluido${deleted.length !== 1 ? 's' : ''} com sucesso.`,
+    );
+  }
 
   function updateField(field: keyof CollectorFormState, value: string | boolean) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -157,6 +191,7 @@ export default function CollectorsPage() {
     try {
       await apiRequest(`/collectors/${deletingCollector.id}`, { method: 'DELETE' });
       setCollectors((current) => current.filter((c) => c.id !== deletingCollector.id));
+      setSelectedIds((prev) => { const next = new Set(prev); next.delete(deletingCollector.id); return next; });
       setDeletingCollector(null);
       setSuccessMessage('Cobrador excluido com sucesso.');
     } catch (err: unknown) {
@@ -237,32 +272,86 @@ export default function CollectorsPage() {
       {loading ? <DataState message="Carregando cobradores" /> : null}
       {error ? <DataState message={error} /> : null}
       {!loading && !error ? (
-        <DataTable
-          columns={['Nome', 'Telefone', 'Email', 'Ativo', 'Acoes']}
-          rows={collectors.map((collector) => [
-            <Link
-              key={`name-${collector.id}`}
-              href={`/collectors/${collector.id}`}
-              className="font-medium text-brand hover:underline"
-            >
-              {collector.name}
-            </Link>,
-            collector.phone,
-            collector.email,
-            <StatusPill key={`active-${collector.id}`} value={collector.active} />,
-            <RowActions
-              key={`actions-${collector.id}`}
-              onEdit={() => openEdit(collector)}
-              onDelete={() => setDeletingCollector(collector)}
-            />,
-          ])}
-          emptyMessage="Nenhum cobrador encontrado."
-        />
+        <>
+          {selectedIds.size > 0 ? (
+            <div className="mb-3 flex items-center gap-3 rounded-md border border-line bg-panel px-4 py-2">
+              <span className="text-sm font-medium text-ink">
+                {selectedIds.size} selecionado{selectedIds.size !== 1 ? 's' : ''}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowBulkDeleteModal(true)}
+                className="inline-flex min-h-8 items-center justify-center rounded-md bg-red-600 px-3 text-xs font-semibold text-white hover:bg-red-700"
+              >
+                Excluir selecionados
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedIds(new Set())}
+                className="text-xs text-muted hover:text-ink"
+              >
+                Limpar selecao
+              </button>
+            </div>
+          ) : null}
+          <DataTable
+            columns={['Nome', 'Telefone', 'Email', 'Ativo', 'Acoes']}
+            rowIds={collectors.map((c) => c.id)}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelect}
+            onToggleAll={toggleAll}
+            rows={collectors.map((collector) => [
+              <Link
+                key={`name-${collector.id}`}
+                href={`/collectors/${collector.id}`}
+                className="font-medium text-brand hover:underline"
+              >
+                {collector.name}
+              </Link>,
+              collector.phone,
+              collector.email,
+              <StatusPill key={`active-${collector.id}`} value={collector.active} />,
+              <RowActions
+                key={`actions-${collector.id}`}
+                onEdit={() => openEdit(collector)}
+                onDelete={() => setDeletingCollector(collector)}
+              />,
+            ])}
+            emptyMessage="Nenhum cobrador encontrado."
+          />
+        </>
       ) : null}
 
       {editingCollector ? (
         <Modal title={`Editar: ${editingCollector.name}`} onClose={closeEdit}>
           {collectorForm}
+        </Modal>
+      ) : null}
+
+      {showBulkDeleteModal ? (
+        <Modal title="Excluir cobradores" onClose={() => setShowBulkDeleteModal(false)} maxWidth="sm">
+          <p className="mb-4 text-sm text-ink">
+            Tem certeza que deseja excluir{' '}
+            <strong>{selectedIds.size} cobrador{selectedIds.size !== 1 ? 'es' : ''}</strong>?
+            {' '}Esta acao nao pode ser desfeita.
+          </p>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setShowBulkDeleteModal(false)}
+              className="inline-flex min-h-10 items-center justify-center rounded-md border border-line px-4 text-sm font-semibold text-ink hover:bg-panel"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+              className="inline-flex min-h-10 items-center justify-center rounded-md bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+            >
+              {bulkDeleting ? 'Excluindo...' : `Excluir ${selectedIds.size}`}
+            </button>
+          </div>
         </Modal>
       ) : null}
 
