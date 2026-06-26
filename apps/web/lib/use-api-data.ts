@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { apiRequest, ApiError } from './api';
 import { getToken } from './auth';
 
@@ -16,6 +16,7 @@ export function useApiData<T>(path: string) {
     loading: true,
     error: null,
   });
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     if (!getToken()) {
@@ -24,6 +25,8 @@ export function useApiData<T>(path: string) {
     }
 
     let active = true;
+
+    setState((prev) => ({ ...prev, loading: true }));
 
     apiRequest<T>(path)
       .then((data) => {
@@ -49,7 +52,9 @@ export function useApiData<T>(path: string) {
     return () => {
       active = false;
     };
-  }, [path]);
+  }, [path, tick]);
 
-  return state;
+  const reload = useCallback(() => setTick((t) => t + 1), []);
+
+  return { ...state, reload };
 }

@@ -31,6 +31,20 @@ export class MessageAnalysisProcessor extends WorkerHost {
 
     this.logger.log(`Processando job ${job.id} — mensagem ${messageId}`);
 
+    if (clientId) {
+      const client = await this.prisma.client.findUnique({
+        where: { id: clientId },
+        select: { aiEnabled: true },
+      });
+
+      if (!client?.aiEnabled) {
+        this.logger.log(
+          `Job ${job.id} ignorado — IA desativada para cliente ${clientId}`,
+        );
+        return;
+      }
+    }
+
     await this.systemEventService.record({
       companyId,
       clientId,

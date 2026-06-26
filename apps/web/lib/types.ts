@@ -39,6 +39,7 @@ export type Client = {
   latitude?: number | null;
   longitude?: number | null;
   notes?: string | null;
+  aiEnabled: boolean;
 };
 
 export type Collection = {

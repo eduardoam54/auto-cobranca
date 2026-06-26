@@ -17,6 +17,7 @@ const navigation = [
   { href: '/messages/simulate', label: 'Simular WhatsApp' },
   { href: '/users', label: 'Usuarios' },
   { href: '/imports', label: 'Importar Tabela' },
+  { href: '/ia', label: 'IA & Automacao' },
 ];
 
 type AuthenticatedShellProps = {

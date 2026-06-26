@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsEmail,
   IsNumber,
   IsOptional,
@@ -79,4 +80,8 @@ export class UpdateClientDto {
   @IsOptional()
   @MaxLength(2000)
   notes?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  aiEnabled?: boolean;
 }
