@@ -117,6 +117,12 @@ export class MobileService {
 
     this.ensureTaskCanBeFinished(task.status);
     this.validatePaymentFields(completeMobileTaskDto);
+    await this.validateCheckinDistance(
+      user.companyId,
+      task.clientId,
+      completeMobileTaskDto.latitude,
+      completeMobileTaskDto.longitude,
+    );
 
     if (
       completeMobileTaskDto.result === CollectionVisitResult.paid &&
@@ -193,6 +199,12 @@ export class MobileService {
     const task = await this.findOwnTask(user.companyId, collector.id, taskId);
 
     this.ensureTaskCanBeFinished(task.status);
+    await this.validateCheckinDistance(
+      user.companyId,
+      task.clientId,
+      failMobileTaskDto.latitude,
+      failMobileTaskDto.longitude,
+    );
     const visitedAt = this.resolveVisitedAt(failMobileTaskDto.visitedAt);
 
     return this.prisma.$transaction(async (tx) => {
@@ -673,5 +685,47 @@ export class MobileService {
 
   private resolveVisitedAt(value: string | undefined) {
     return value ? new Date(value) : new Date();
+  }
+
+  private async validateCheckinDistance(
+    companyId: string,
+    clientId: string | null,
+    collectorLat?: number,
+    collectorLon?: number,
+  ) {
+    if (!clientId || collectorLat === undefined || collectorLon === undefined) return;
+
+    const client = await this.prisma.client.findFirst({
+      where: { id: clientId, companyId, deletedAt: null },
+      select: { latitude: true, longitude: true },
+    });
+
+    if (!client?.latitude || !client?.longitude) return;
+
+    const distance = this.haversineDistance(
+      collectorLat, collectorLon,
+      Number(client.latitude), Number(client.longitude),
+    );
+
+    const MAX_METERS = 30;
+    if (distance > MAX_METERS) {
+      throw new BadRequestException(
+        `Voce esta a ${Math.round(distance)} metros do cliente. Aproxime-se para registrar a visita (maximo ${MAX_METERS}m).`,
+      );
+    }
+  }
+
+  private haversineDistance(
+    lat1: number, lon1: number,
+    lat2: number, lon2: number,
+  ): number {
+    const R = 6371000;
+    const toRad = (v: number) => (v * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 }

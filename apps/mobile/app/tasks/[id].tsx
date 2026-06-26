@@ -100,6 +100,7 @@ export default function TaskDetailScreen() {
   const [gpsDenied, setGpsDenied] = useState(false);
   const [gpsCapturing, setGpsCapturing] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
+  const [savingClientLocation, setSavingClientLocation] = useState(false);
   const [promisedDate, setPromisedDate] = useState('');
   const [visitHistory, setVisitHistory] = useState<ClientVisit[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -154,6 +155,34 @@ export default function TaskDetailScreen() {
       };
     } catch {
       return null;
+    }
+  }
+
+  // ── Save client location ──────────────────────────────────────────────────
+
+  async function handleSaveClientLocation() {
+    if (!task?.clientId || isOffline) return;
+    setSavingClientLocation(true);
+    try {
+      const loc = await captureLocation();
+      if (!loc) {
+        Alert.alert('GPS não disponível', 'Não foi possível obter sua localização.');
+        return;
+      }
+      const updated = await request<{ latitude: number; longitude: number }>(
+        `/mobile/clients/${task.clientId}`,
+        { method: 'PATCH', body: { latitude: loc.latitude, longitude: loc.longitude } },
+      );
+      setTask((prev) =>
+        prev
+          ? { ...prev, client: prev.client ? { ...prev.client, ...updated } : prev.client }
+          : prev,
+      );
+      Alert.alert('Localização salva', 'A localização do cliente foi registrada com sucesso.');
+    } catch {
+      Alert.alert('Erro', 'Não foi possível salvar a localização do cliente.');
+    } finally {
+      setSavingClientLocation(false);
     }
   }
 
@@ -381,6 +410,22 @@ export default function TaskDetailScreen() {
           <Info label="Endereco" value={getTaskAddress(task)} />
           <Info label="Observacoes" value={task.client?.notes} />
           <ClientQuickActions task={task} />
+          {!isDone && !isOffline ? (
+            <TouchableOpacity
+              style={[s.qaBtn, s.qaBtnLocation, savingClientLocation && s.qaBtnDisabled]}
+              onPress={handleSaveClientLocation}
+              disabled={savingClientLocation}
+              activeOpacity={0.8}
+            >
+              <Text style={s.qaBtnText}>
+                {savingClientLocation
+                  ? '📡 Capturando...'
+                  : task.client?.latitude
+                  ? '📍 Atualizar localização'
+                  : '📍 Salvar localização aqui'}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
         </Section>
 
         {/* Collection */}
@@ -960,6 +1005,8 @@ const s = StyleSheet.create({
   qaBtn: { flex: 1, minWidth: 80, borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
   qaBtnCall: { backgroundColor: '#0369a1' },
   qaBtnWA: { backgroundColor: '#166534' },
+  qaBtnLocation: { backgroundColor: '#7c3aed', marginTop: 8, flex: 0, width: '100%' },
+  qaBtnDisabled: { opacity: 0.6 },
   qaBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 13 },
 
   // Form actions
