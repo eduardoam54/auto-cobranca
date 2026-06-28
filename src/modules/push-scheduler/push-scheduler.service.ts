@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { ExpoPushService } from '../../infra/expo-push/expo-push.service';
 
@@ -15,7 +15,10 @@ export class PushSchedulerService {
   @Cron('0 8 * * *', { timeZone: 'America/Sao_Paulo' })
   async sendDailyReminders() {
     this.logger.log('Enviando lembretes diários de tarefas pendentes...');
+    await this.prisma.withReconnect(() => this.runDailyReminders());
+  }
 
+  private async runDailyReminders() {
     const tasks = await this.prisma.collectionTask.findMany({
       where: {
         status: { in: ['pending', 'assigned'] },

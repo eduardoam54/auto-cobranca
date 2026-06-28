@@ -22,9 +22,11 @@ export class CollectionDunningService {
   async markOverdueCollections() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
     this.logger.log('Verificando cobranças vencidas...');
+    await this.prisma.withReconnect(() => this.runMarkOverdue(today));
+  }
 
+  private async runMarkOverdue(today: Date) {
     const overdueCollections = await this.prisma.collection.findMany({
       where: {
         status: CollectionStatus.pending,
