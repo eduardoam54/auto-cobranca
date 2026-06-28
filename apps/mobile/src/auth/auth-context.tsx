@@ -18,6 +18,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import NetInfo from '@react-native-community/netinfo';
 import { syncOfflineQueue } from '@/offline/offline-sync';
 import {
+  ApiError,
   apiRequest,
   setTokenProvider,
   setUnauthorizedHandler,
@@ -125,8 +126,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await setStoredRefreshToken(res.refreshToken);
       setAuthToken(res.accessToken);
       return res.accessToken;
-    } catch {
-      await logout();
+    } catch (err) {
+      // Só desloga se o servidor rejeitou o token (401/403)
+      // Erros de rede não devem forçar logout e perder a sessão
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+        await logout();
+      }
       return null;
     }
   }, [setAuthToken, logout]);
@@ -197,48 +202,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true;
 
+    async function fetchProfile(): Promise<void> {
+      try {
+        const profile = await apiRequest<MobileMe>('/mobile/me');
+        if (active) setMe(profile);
+      } catch {
+        // Falha de rede ao carregar perfil — usuário continua logado,
+        // perfil será carregado na próxima requisição bem-sucedida
+      }
+    }
+
     async function bootstrap() {
       try {
         const storedToken = await getStoredAccessToken();
         if (!active) return;
 
         if (!storedToken) {
-          // Tenta renovar silenciosamente via refresh token persistido
+          // Sem access token — tenta renovar via refresh token persistido
           const refreshed = await doRefresh();
           if (!active) return;
           if (refreshed) {
-            const profile = await apiRequest<MobileMe>('/mobile/me');
-            if (active) {
-              setMe(profile);
-              void registerPushToken();
-            }
-          } else {
-            setAuthToken(null);
+            void registerPushToken();
+            await fetchProfile();
           }
+          // Se refresh falhou por rede (doRefresh retornou null sem deslogar),
+          // mantém initializing=false sem token: voltará ao login normalmente
           return;
         }
 
         setAuthToken(storedToken);
-        const profile = await apiRequest<MobileMe>('/mobile/me');
-        if (active) {
-          setMe(profile);
-          void registerPushToken();
-        }
-      } catch {
-        // Access token expirou — tenta refresh
-        const refreshed = await doRefresh();
-        if (!active) return;
-        if (refreshed) {
-          try {
-            const profile = await apiRequest<MobileMe>('/mobile/me');
-            if (active) setMe(profile);
-          } catch {
-            await clearAllTokens();
-            if (active) { setAuthToken(null); setMe(null); }
+
+        try {
+          const profile = await apiRequest<MobileMe>('/mobile/me');
+          if (active) {
+            setMe(profile);
+            void registerPushToken();
           }
-        } else {
-          await clearAllTokens();
-          if (active) { setAuthToken(null); setMe(null); }
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 401) {
+            // Access token expirou — renova silenciosamente
+            const refreshed = await doRefresh();
+            if (!active) return;
+            if (refreshed) {
+              void registerPushToken();
+              await fetchProfile();
+            }
+          }
+          // Erro de rede: mantém sessão com token atual, tenta perfil depois
         }
       } finally {
         if (active) setInitializing(false);

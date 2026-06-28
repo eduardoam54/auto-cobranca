@@ -20,8 +20,8 @@ export const envValidationSchema = Joi.object({
   JWT_SECRET: Joi.string().min(16).required().messages({
     'string.min': 'JWT_SECRET deve ter ao menos 16 caracteres por seguranca.',
   }),
-  JWT_EXPIRES_IN: Joi.string().default('15m'),
-  JWT_REFRESH_EXPIRES_IN: Joi.string().default('30d'),
+  JWT_EXPIRES_IN: Joi.string().default('1h'),
+  JWT_REFRESH_EXPIRES_IN: Joi.string().default('90d'),
 
   // Documentacao Swagger: sempre ligada em dev; em producao so com SWAGGER_ENABLED=true.
   SWAGGER_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
