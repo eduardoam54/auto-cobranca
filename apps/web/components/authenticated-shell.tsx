@@ -7,18 +7,18 @@ import { clearToken, getToken } from '@/lib/auth';
 import { apiRequest } from '@/lib/api';
 
 const navigation = [
-  { href: '/dashboard', label: 'Dashboard' },
-  { href: '/clients', label: 'Clientes' },
-  { href: '/collections', label: 'Cobranças' },
-  { href: '/collectors', label: 'Cobradores' },
-  { href: '/collection-tasks', label: 'Tarefas' },
-  { href: '/visits', label: 'Visitas' },
-  { href: '/reports', label: 'Relatórios' },
-  { href: '/messages', label: 'Mensagens' },
-  { href: '/messages/simulate', label: 'Simular WhatsApp' },
-  { href: '/users', label: 'Usuários' },
-  { href: '/imports', label: 'Importar Tabela' },
-  { href: '/ia', label: 'IA & Automação' },
+  { href: '/dashboard',          label: 'Dashboard' },
+  { href: '/collections',        label: 'Cobranças' },
+  { href: '/clients',            label: 'Clientes' },
+  { href: '/collection-tasks',   label: 'Tarefas' },
+  { href: '/collectors',         label: 'Cobradores' },
+  { href: '/visits',             label: 'Visitas' },
+  { href: '/ia',                 label: 'IA & Automação' },
+  { href: '/reports',            label: 'Relatórios' },
+  { href: '/messages',           label: 'Mensagens' },
+  { href: '/imports',            label: 'Importar Tabela' },
+  { href: '/users',              label: 'Usuários' },
+  { href: '/messages/simulate',  label: 'Simular WhatsApp' },
 ];
 
 type AuthenticatedShellProps = {
