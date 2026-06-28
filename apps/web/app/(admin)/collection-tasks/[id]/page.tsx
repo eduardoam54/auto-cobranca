@@ -12,6 +12,7 @@ import {
   formatText,
 } from '@/lib/format';
 import { useApiData } from '@/lib/use-api-data';
+import { useApiList } from '@/lib/use-paginated-data';
 import type {
   Client,
   Collection,
@@ -43,10 +44,10 @@ export default function CollectionTaskDetailPage({
   const { data: task, loading: taskLoading, error: taskError } =
     useApiData<CollectionTask>(`/collection-tasks/${id}`);
   const { data: allVisits, loading: visitsLoading } =
-    useApiData<CollectionVisit[]>('/collection-visits');
-  const { data: allClients } = useApiData<Client[]>('/clients');
-  const { data: allCollections } = useApiData<Collection[]>('/collections');
-  const { data: allCollectors } = useApiData<Collector[]>('/collectors');
+    useApiList<CollectionVisit>('/collection-visits');
+  const { data: allClients } = useApiList<Client>('/clients');
+  const { data: allCollections } = useApiList<Collection>('/collections');
+  const { data: allCollectors } = useApiList<Collector>('/collectors');
 
   const client = useMemo(
     () => (allClients ?? []).find((c) => c.id === task?.clientId),

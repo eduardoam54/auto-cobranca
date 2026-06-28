@@ -6,13 +6,13 @@ import { DataState } from '@/components/data-state';
 import { Modal } from '@/components/modal';
 import { PageHeader } from '@/components/page-header';
 import { ApiError, apiRequest } from '@/lib/api';
-import { useApiData } from '@/lib/use-api-data';
+import { useApiList } from '@/lib/use-paginated-data';
 import type { Client } from '@/lib/types';
 
 type BulkAction = { type: 'activate' | 'deactivate'; ids: Set<string> } | null;
 
 export default function IaPage() {
-  const { data: clients, loading, error, reload } = useApiData<Client[]>('/clients');
+  const { data: clients, loading, error, reload } = useApiList<Client>('/clients');
   const [toggling, setToggling] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [selectedWithout, setSelectedWithout] = useState<Set<string>>(new Set());

@@ -6,8 +6,16 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../infra/prisma/prisma.service';
+import {
+  buildPaginatedResult,
+  getPaginationParams,
+  resolveOrderBy,
+} from '../common/pagination';
 import { CreateMessageDto } from './dto/create-message.dto';
+import { ListMessagesQueryDto } from './dto/list-messages-query.dto';
 import { UpdateMessageDto } from './dto/update-message.dto';
+
+const MESSAGE_SORT_FIELDS = ['createdAt', 'receivedAt', 'sentAt'] as const;
 
 @Injectable()
 export class MessageService {
@@ -28,16 +36,40 @@ export class MessageService {
     }
   }
 
-  findAll(companyId: string) {
-    return this.prisma.message.findMany({
-      where: {
-        companyId,
-        deletedAt: null,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
+  async findAll(companyId: string, query: ListMessagesQueryDto) {
+    const { page, limit, skip, take } = getPaginationParams(query);
+    const search = query.search?.trim();
+
+    const where: Prisma.MessageWhereInput = {
+      companyId,
+      deletedAt: null,
+      ...(query.direction ? { direction: query.direction } : {}),
+      ...(query.channel ? { channel: query.channel } : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.clientId ? { clientId: query.clientId } : {}),
+      ...(search
+        ? {
+            OR: [
+              { phone: { contains: search } },
+              { content: { contains: search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+
+    const orderBy = resolveOrderBy(
+      query.sortBy,
+      query.sortOrder,
+      MESSAGE_SORT_FIELDS,
+      'createdAt',
+    );
+
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.message.findMany({ where, orderBy, skip, take }),
+      this.prisma.message.count({ where }),
+    ]);
+
+    return buildPaginatedResult(data, total, page, limit);
   }
 
   async findOne(companyId: string, id: string) {

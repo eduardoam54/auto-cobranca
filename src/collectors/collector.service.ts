@@ -6,8 +6,16 @@ import {
 } from '@nestjs/common';
 import { Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from '../infra/prisma/prisma.service';
+import {
+  buildPaginatedResult,
+  getPaginationParams,
+  resolveOrderBy,
+} from '../common/pagination';
 import { CreateCollectorDto } from './dto/create-collector.dto';
+import { ListCollectorsQueryDto } from './dto/list-collectors-query.dto';
 import { UpdateCollectorDto } from './dto/update-collector.dto';
+
+const COLLECTOR_SORT_FIELDS = ['name', 'createdAt'] as const;
 
 @Injectable()
 export class CollectorService {
@@ -40,16 +48,39 @@ export class CollectorService {
     }
   }
 
-  findAll(companyId: string) {
-    return this.prisma.collector.findMany({
-      where: {
-        companyId,
-        deletedAt: null,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
+  async findAll(companyId: string, query: ListCollectorsQueryDto) {
+    const { page, limit, skip, take } = getPaginationParams(query);
+    const search = query.search?.trim();
+
+    const where: Prisma.CollectorWhereInput = {
+      companyId,
+      deletedAt: null,
+      ...(query.active !== undefined ? { active: query.active } : {}),
+      ...(search
+        ? {
+            OR: [
+              { name: { contains: search, mode: 'insensitive' } },
+              { email: { contains: search, mode: 'insensitive' } },
+              { phone: { contains: search } },
+              { whatsappPhone: { contains: search } },
+            ],
+          }
+        : {}),
+    };
+
+    const orderBy = resolveOrderBy(
+      query.sortBy,
+      query.sortOrder,
+      COLLECTOR_SORT_FIELDS,
+      'createdAt',
+    );
+
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.collector.findMany({ where, orderBy, skip, take }),
+      this.prisma.collector.count({ where }),
+    ]);
+
+    return buildPaginatedResult(data, total, page, limit);
   }
 
   async findOne(companyId: string, id: string) {

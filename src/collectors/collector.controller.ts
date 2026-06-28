@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
@@ -16,6 +17,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { CollectorService } from './collector.service';
 import { CreateCollectorDto } from './dto/create-collector.dto';
+import { ListCollectorsQueryDto } from './dto/list-collectors-query.dto';
 import { UpdateCollectorDto } from './dto/update-collector.dto';
 
 @Controller('collectors')
@@ -34,8 +36,11 @@ export class CollectorController {
 
   @Get()
   @Roles(UserRole.admin, UserRole.manager, UserRole.viewer)
-  findAll(@CurrentUser() user: AuthenticatedUser) {
-    return this.collectorService.findAll(user.companyId);
+  findAll(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ListCollectorsQueryDto,
+  ) {
+    return this.collectorService.findAll(user.companyId, query);
   }
 
   @Get(':id')

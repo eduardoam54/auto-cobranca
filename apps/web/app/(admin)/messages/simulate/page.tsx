@@ -5,13 +5,13 @@ import { DataState } from '@/components/data-state';
 import { PageHeader } from '@/components/page-header';
 import { ApiError, apiRequest } from '@/lib/api';
 import { formatCurrency, formatText } from '@/lib/format';
-import { useApiData } from '@/lib/use-api-data';
+import { useApiList } from '@/lib/use-paginated-data';
 import type { AiCollectionAgentResult, Client } from '@/lib/types';
 
 const exampleMessage = 'Pode passar aqui amanha depois das 18h que eu pago';
 
 export default function SimulateWhatsAppPage() {
-  const { data: clients, loading, error } = useApiData<Client[]>('/clients');
+  const { data: clients, loading, error } = useApiList<Client>('/clients');
   const [selectedClientId, setSelectedClientId] = useState('');
   const [messageContent, setMessageContent] = useState('');
   const [analyzing, setAnalyzing] = useState(false);

@@ -2,18 +2,21 @@
 
 import Link from 'next/link';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { Alert } from '@/components/alert';
 import { DataState } from '@/components/data-state';
 import { DataTable } from '@/components/table';
 import { FormActions } from '@/components/form-actions';
 import { Modal } from '@/components/modal';
 import { PageHeader } from '@/components/page-header';
+import { Pagination } from '@/components/pagination';
+import { SearchInput } from '@/components/search-input';
 import { SelectField } from '@/components/select-field';
 import { StatusPill } from '@/components/status-pill';
 import { TextField } from '@/components/text-field';
 import { ApiError, apiRequest } from '@/lib/api';
-import { formatText, shortId } from '@/lib/format';
-import { useApiData } from '@/lib/use-api-data';
+import { shortId } from '@/lib/format';
+import { useApiList, usePaginatedData } from '@/lib/use-paginated-data';
 import type { Client, Collection, CollectionTask, Collector } from '@/lib/types';
 
 type PanelMode = 'new-task' | 'assign-collector' | null;
@@ -67,21 +70,49 @@ const taskStatusOptions = ['pending', 'assigned', 'in_progress', 'completed'].ma
   label: formatLabel(s),
 }));
 
-export default function CollectionTasksPage() {
-  const { data, loading, error } = useApiData<CollectionTask[]>('/collection-tasks');
-  const { data: collectorsData, loading: collectorsLoading, error: collectorsError } =
-    useApiData<Collector[]>('/collectors');
-  const { data: clientsData, loading: clientsLoading } = useApiData<Client[]>('/clients');
-  const { data: collectionsData, loading: collectionsLoading } =
-    useApiData<Collection[]>('/collections');
+const statusFilterOptions = [
+  { value: '', label: 'Todas' },
+  { value: 'pending', label: 'Pendente' },
+  { value: 'assigned', label: 'Atribuída' },
+  { value: 'in_progress', label: 'Em andamento' },
+  { value: 'completed', label: 'Concluída' },
+  { value: 'failed', label: 'Falhou' },
+  { value: 'canceled', label: 'Cancelada' },
+];
 
-  const [tasks, setTasks] = useState<CollectionTask[]>([]);
+const priorityFilterOptions = [
+  { value: '', label: 'Todas' },
+  { value: 'low', label: 'Baixa' },
+  { value: 'medium', label: 'Média' },
+  { value: 'high', label: 'Alta' },
+  { value: 'critical', label: 'Crítica' },
+];
+
+export default function CollectionTasksPage() {
+  const {
+    items,
+    meta,
+    loading,
+    error,
+    page,
+    setPage,
+    search,
+    setSearch,
+    filters,
+    setFilters,
+    reload,
+  } = usePaginatedData<CollectionTask>('/collection-tasks');
+  const { data: collectorsData, loading: collectorsLoading, error: collectorsError } =
+    useApiList<Collector>('/collectors');
+  const { data: clientsData, loading: clientsLoading } = useApiList<Client>('/clients');
+  const { data: collectionsData, loading: collectionsLoading } =
+    useApiList<Collection>('/collections');
+
   const [panelMode, setPanelMode] = useState<PanelMode>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [selectedCollectorId, setSelectedCollectorId] = useState('');
   const [newTaskForm, setNewTaskForm] = useState<NewTaskFormState>(emptyNewTaskForm);
   const [saving, setSaving] = useState(false);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [deletingTask, setDeletingTask] = useState<CollectionTask | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -90,8 +121,8 @@ export default function CollectionTasksPage() {
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
   useEffect(() => {
-    if (data) { setTasks(data); setSelectedIds(new Set()); }
-  }, [data]);
+    setSelectedIds(new Set());
+  }, [items]);
 
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
@@ -102,7 +133,7 @@ export default function CollectionTasksPage() {
   }
 
   function toggleAll(selectAll: boolean) {
-    setSelectedIds(selectAll ? new Set(tasks.map((t) => t.id)) : new Set());
+    setSelectedIds(selectAll ? new Set(items.map((t) => t.id)) : new Set());
   }
 
   async function handleBulkDelete() {
@@ -111,17 +142,18 @@ export default function CollectionTasksPage() {
     const results = await Promise.allSettled(
       ids.map((id) => apiRequest(`/collection-tasks/${id}`, { method: 'DELETE' })),
     );
-    const deleted = ids.filter((_, i) => results[i].status === 'fulfilled');
-    setTasks((prev) => prev.filter((t) => !deleted.includes(t.id)));
-    setSelectedIds(new Set());
+    const failed = results.filter((r) => r.status === 'rejected').length;
+    const deleted = ids.length - failed;
     setShowBulkDeleteModal(false);
     setBulkDeleting(false);
-    const failed = ids.length - deleted.length;
-    setSuccessMessage(
-      failed > 0
-        ? `${deleted.length} excluida(s). ${failed} nao puderam ser excluidas.`
-        : `${deleted.length} tarefa${deleted.length !== 1 ? 's' : ''} excluida${deleted.length !== 1 ? 's' : ''} com sucesso.`,
-    );
+    reload();
+    if (failed > 0) {
+      toast.error(`${deleted} excluída(s). ${failed} não puderam ser excluídas.`);
+    } else {
+      toast.success(
+        `${deleted} tarefa${deleted !== 1 ? 's' : ''} excluída${deleted !== 1 ? 's' : ''} com sucesso.`,
+      );
+    }
   }
 
   const activeCollectors = useMemo(
@@ -146,14 +178,13 @@ export default function CollectionTasksPage() {
     );
   }, [collectionsData, newTaskForm.clientId]);
 
-  const selectedTask = tasks.find((t) => t.id === selectedTaskId);
+  const selectedTask = items.find((t) => t.id === selectedTaskId);
 
   function openNewTaskForm() {
     setPanelMode('new-task');
     setSelectedTaskId(null);
     setSelectedCollectorId('');
     setFormError(null);
-    setSuccessMessage(null);
   }
 
   function openAssignForm(task: CollectionTask) {
@@ -161,7 +192,6 @@ export default function CollectionTasksPage() {
     setSelectedTaskId(task.id);
     setSelectedCollectorId(task.collectorId ?? '');
     setFormError(null);
-    setSuccessMessage(null);
   }
 
   function closePanel() {
@@ -177,12 +207,6 @@ export default function CollectionTasksPage() {
       return { ...current, [field]: value };
     });
     setFormError(null);
-    setSuccessMessage(null);
-  }
-
-  async function reloadTasks() {
-    const nextTasks = await apiRequest<CollectionTask[]>('/collection-tasks');
-    setTasks(nextTasks);
   }
 
   async function handleAssignCollector(event: FormEvent<HTMLFormElement>) {
@@ -194,18 +218,17 @@ export default function CollectionTasksPage() {
     }
     setSaving(true);
     setFormError(null);
-    setSuccessMessage(null);
     try {
       await apiRequest<CollectionTask>(
         `/collection-tasks/${selectedTaskId}/assign-collector`,
         { method: 'PATCH', body: { collectorId: selectedCollectorId } },
       );
-      await reloadTasks();
+      reload();
       closePanel();
-      setSuccessMessage('Cobrador atribuido com sucesso');
+      toast.success('Cobrador atribuído com sucesso.');
     } catch (err: unknown) {
       setFormError(
-        err instanceof ApiError ? err.message : 'Nao foi possivel atribuir o cobrador.',
+        err instanceof ApiError ? err.message : 'Não foi possível atribuir o cobrador.',
       );
     } finally {
       setSaving(false);
@@ -215,7 +238,6 @@ export default function CollectionTasksPage() {
   async function handleCreateTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError(null);
-    setSuccessMessage(null);
     const payload = buildNewTaskPayload(newTaskForm);
     if (!payload.ok) {
       setFormError(payload.error);
@@ -227,13 +249,13 @@ export default function CollectionTasksPage() {
         method: 'POST',
         body: payload.data,
       });
-      await reloadTasks();
+      reload();
       setNewTaskForm(emptyNewTaskForm);
       closePanel();
-      setSuccessMessage('Tarefa criada com sucesso');
+      toast.success('Tarefa criada com sucesso.');
     } catch (err: unknown) {
       setFormError(
-        err instanceof ApiError ? err.message : 'Nao foi possivel criar a tarefa.',
+        err instanceof ApiError ? err.message : 'Não foi possível criar a tarefa.',
       );
     } finally {
       setSaving(false);
@@ -245,26 +267,28 @@ export default function CollectionTasksPage() {
     setDeleting(true);
     try {
       await apiRequest(`/collection-tasks/${deletingTask.id}`, { method: 'DELETE' });
-      setTasks((current) => current.filter((t) => t.id !== deletingTask.id));
-      setSelectedIds((prev) => { const next = new Set(prev); next.delete(deletingTask.id); return next; });
       setDeletingTask(null);
-      setSuccessMessage('Tarefa excluida com sucesso.');
+      toast.success('Tarefa excluída com sucesso.');
+      reload();
     } catch (err: unknown) {
       setDeletingTask(null);
       setFormError(
-        err instanceof ApiError ? err.message : 'Nao foi possivel excluir a tarefa.',
+        err instanceof ApiError ? err.message : 'Não foi possível excluir a tarefa.',
       );
     } finally {
       setDeleting(false);
     }
   }
 
+  const statusFilter = (filters.status as string | undefined) ?? '';
+  const priorityFilter = (filters.priority as string | undefined) ?? '';
+
   return (
     <>
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <PageHeader
-          title="Tarefas de Cobranca"
-          description="Fila de acoes para acompanhamento das cobrancas."
+          title="Tarefas de Cobrança"
+          description="Fila de ações para acompanhamento das cobranças."
         />
         <button
           type="button"
@@ -275,8 +299,55 @@ export default function CollectionTasksPage() {
         </button>
       </div>
 
-      {successMessage ? <div className="mb-4"><Alert tone="success" message={successMessage} /></div> : null}
-      {collectorsError ? <div className="mb-4"><Alert tone="error" message={collectorsError} /></div> : null}
+      {collectorsError ? (
+        <div className="mb-4">
+          <Alert tone="error" message={collectorsError} />
+        </div>
+      ) : null}
+
+      <div className="mb-4 flex flex-col gap-3">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Buscar por título, descrição ou endereço..."
+        />
+        <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="text-xs font-semibold uppercase text-muted mr-1">Status:</span>
+            {statusFilterOptions.map((f) => (
+              <button
+                key={f.value}
+                type="button"
+                onClick={() => setFilters({ status: f.value || undefined })}
+                className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+                  statusFilter === f.value
+                    ? 'bg-brand text-white'
+                    : 'bg-white border border-line text-muted hover:border-brand hover:text-brand'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="text-xs font-semibold uppercase text-muted mr-1">Prioridade:</span>
+            {priorityFilterOptions.map((f) => (
+              <button
+                key={f.value}
+                type="button"
+                onClick={() => setFilters({ priority: f.value || undefined })}
+                className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+                  priorityFilter === f.value
+                    ? 'bg-brand text-white'
+                    : 'bg-white border border-line text-muted hover:border-brand hover:text-brand'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
 
       {loading ? <DataState message="Carregando tarefas" /> : null}
       {error ? <DataState message={error} /> : null}
@@ -299,17 +370,17 @@ export default function CollectionTasksPage() {
                 onClick={() => setSelectedIds(new Set())}
                 className="text-xs text-muted hover:text-ink"
               >
-                Limpar selecao
+                Limpar seleção
               </button>
             </div>
           ) : null}
           <DataTable
-            columns={['Titulo', 'Cliente', 'Cobrador', 'Tipo', 'Prioridade', 'Status', 'Acoes']}
-            rowIds={tasks.map((t) => t.id)}
+            columns={['Título', 'Cliente', 'Cobrador', 'Tipo', 'Prioridade', 'Status', 'Ações']}
+            rowIds={items.map((t) => t.id)}
             selectedIds={selectedIds}
             onToggleSelect={toggleSelect}
             onToggleAll={toggleAll}
-            rows={tasks.map((task) => [
+            rows={items.map((task) => [
               <Link
                 key={`title-${task.id}`}
                 href={`/collection-tasks/${task.id}`}
@@ -333,6 +404,11 @@ export default function CollectionTasksPage() {
             ])}
             emptyMessage="Nenhuma tarefa encontrada."
           />
+          {meta && meta.totalPages > 1 ? (
+            <div className="mt-4">
+              <Pagination meta={meta} onPageChange={setPage} />
+            </div>
+          ) : null}
         </>
       ) : null}
 
@@ -363,11 +439,11 @@ export default function CollectionTasksPage() {
               />
             </div>
             {!collectorsLoading && activeCollectors.length === 0 ? (
-              <Alert tone="warning" message="Nenhum cobrador ativo encontrado" />
+              <Alert tone="warning" message="Nenhum cobrador ativo encontrado." />
             ) : null}
             {formError ? <Alert tone="error" message={formError} /> : null}
             <FormActions
-              submitLabel={saving ? 'Salvando...' : 'Confirmar atribuicao'}
+              submitLabel={saving ? 'Salvando...' : 'Confirmar atribuição'}
               saving={saving}
               onCancel={closePanel}
             />
@@ -389,7 +465,7 @@ export default function CollectionTasksPage() {
                 options={(clientsData ?? []).map((c) => ({ value: c.id, label: c.name }))}
               />
               <SelectField
-                label="Cobranca"
+                label="Cobrança"
                 value={newTaskForm.collectionId}
                 disabled={collectionsLoading || !newTaskForm.clientId}
                 onChange={(v) => updateNewTaskField('collectionId', v)}
@@ -397,7 +473,7 @@ export default function CollectionTasksPage() {
                 options={filteredCollections.map((c) => ({ value: c.id, label: c.title }))}
               />
               <TextField
-                label="Titulo"
+                label="Título"
                 value={newTaskForm.title}
                 required
                 onChange={(v) => updateNewTaskField('title', v)}
@@ -424,7 +500,7 @@ export default function CollectionTasksPage() {
                 options={taskStatusOptions}
               />
               <TextField
-                label="Endereco"
+                label="Endereço"
                 value={newTaskForm.address}
                 onChange={(v) => updateNewTaskField('address', v)}
               />
@@ -444,7 +520,7 @@ export default function CollectionTasksPage() {
               />
             </div>
             <label className="block text-sm font-medium text-ink">
-              Descricao
+              Descrição
               <textarea
                 value={newTaskForm.description}
                 onChange={(e) => updateNewTaskField('description', e.target.value)}
@@ -470,7 +546,7 @@ export default function CollectionTasksPage() {
           <p className="mb-4 text-sm text-ink">
             Tem certeza que deseja excluir{' '}
             <strong>{selectedIds.size} tarefa{selectedIds.size !== 1 ? 's' : ''}</strong>?
-            {' '}Esta acao nao pode ser desfeita.
+            {' '}Esta ação não pode ser desfeita.
           </p>
           <div className="flex justify-end gap-2">
             <button
@@ -496,7 +572,7 @@ export default function CollectionTasksPage() {
         <Modal title="Excluir tarefa" onClose={() => setDeletingTask(null)} maxWidth="sm">
           <p className="mb-4 text-sm text-ink">
             Tem certeza que deseja excluir a tarefa{' '}
-            <strong>{deletingTask.title}</strong>? Esta acao nao pode ser desfeita.
+            <strong>{deletingTask.title}</strong>? Esta ação não pode ser desfeita.
           </p>
           <div className="flex justify-end gap-2">
             <button
@@ -555,13 +631,13 @@ function TaskActions({ task, onAssign, onDelete }: TaskActionsProps) {
 
 function buildNewTaskPayload(form: NewTaskFormState): NewTaskPayloadResult {
   if (!form.clientId) return { ok: false, error: 'Selecione um cliente.' };
-  if (!form.title.trim()) return { ok: false, error: 'Informe o titulo da tarefa.' };
+  if (!form.title.trim()) return { ok: false, error: 'Informe o título da tarefa.' };
 
   const latitude = parseOptionalNumber(form.latitude);
   const longitude = parseOptionalNumber(form.longitude);
 
   if (latitude === null || longitude === null) {
-    return { ok: false, error: 'Latitude e longitude devem ser numeros validos.' };
+    return { ok: false, error: 'Latitude e longitude devem ser números válidos.' };
   }
 
   const data: Record<string, string | number> = {

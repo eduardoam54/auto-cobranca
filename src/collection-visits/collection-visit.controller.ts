@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -7,6 +15,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { CollectionVisitService } from './collection-visit.service';
 import { CreateCollectionVisitDto } from './dto/create-collection-visit.dto';
+import { ListCollectionVisitsQueryDto } from './dto/list-collection-visits-query.dto';
 
 @Controller()
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -30,8 +39,11 @@ export class CollectionVisitController {
 
   @Get('collection-visits')
   @Roles(UserRole.admin, UserRole.manager, UserRole.viewer)
-  findAll(@CurrentUser() user: AuthenticatedUser) {
-    return this.collectionVisitService.findAll(user.companyId);
+  findAll(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ListCollectionVisitsQueryDto,
+  ) {
+    return this.collectionVisitService.findAll(user.companyId, query);
   }
 
   @Get('collection-visits/:id')

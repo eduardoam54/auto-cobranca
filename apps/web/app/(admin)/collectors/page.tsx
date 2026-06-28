@@ -2,17 +2,20 @@
 
 import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { Alert } from '@/components/alert';
 import { DataState } from '@/components/data-state';
 import { DataTable } from '@/components/table';
 import { FormActions } from '@/components/form-actions';
 import { Modal } from '@/components/modal';
 import { PageHeader } from '@/components/page-header';
+import { Pagination } from '@/components/pagination';
+import { SearchInput } from '@/components/search-input';
 import { SelectField } from '@/components/select-field';
 import { StatusPill } from '@/components/status-pill';
 import { TextField } from '@/components/text-field';
 import { ApiError, apiRequest } from '@/lib/api';
-import { useApiData } from '@/lib/use-api-data';
+import { useApiList, usePaginatedData } from '@/lib/use-paginated-data';
 import type { Collector, User } from '@/lib/types';
 
 type CollectorFormState = {
@@ -43,6 +46,12 @@ const requiredFields = [
   { key: 'email', label: 'email' },
 ] as const;
 
+const activeFilterOptions = [
+  { value: undefined, label: 'Todos' },
+  { value: 'true', label: 'Ativos' },
+  { value: 'false', label: 'Inativos' },
+];
+
 function collectorToForm(c: Collector): CollectorFormState {
   return {
     name: c.name,
@@ -57,15 +66,26 @@ function collectorToForm(c: Collector): CollectorFormState {
 }
 
 export default function CollectorsPage() {
-  const { data, loading, error } = useApiData<Collector[]>('/collectors');
+  const {
+    items,
+    meta,
+    loading,
+    error,
+    page,
+    setPage,
+    search,
+    setSearch,
+    filters,
+    setFilters,
+    reload,
+  } = usePaginatedData<Collector>('/collectors');
   const { data: usersData, loading: usersLoading, error: usersError } =
-    useApiData<User[]>('/users');
-  const [collectors, setCollectors] = useState<Collector[]>([]);
+    useApiList<User>('/users');
+
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState<CollectorFormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [editingCollector, setEditingCollector] = useState<Collector | null>(null);
   const [deletingCollector, setDeletingCollector] = useState<Collector | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -74,8 +94,8 @@ export default function CollectorsPage() {
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
   useEffect(() => {
-    if (data) { setCollectors(data); setSelectedIds(new Set()); }
-  }, [data]);
+    setSelectedIds(new Set());
+  }, [items]);
 
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
@@ -86,7 +106,7 @@ export default function CollectorsPage() {
   }
 
   function toggleAll(selectAll: boolean) {
-    setSelectedIds(selectAll ? new Set(collectors.map((c) => c.id)) : new Set());
+    setSelectedIds(selectAll ? new Set(items.map((c) => c.id)) : new Set());
   }
 
   async function handleBulkDelete() {
@@ -95,30 +115,29 @@ export default function CollectorsPage() {
     const results = await Promise.allSettled(
       ids.map((id) => apiRequest(`/collectors/${id}`, { method: 'DELETE' })),
     );
-    const deleted = ids.filter((_, i) => results[i].status === 'fulfilled');
-    setCollectors((prev) => prev.filter((c) => !deleted.includes(c.id)));
-    setSelectedIds(new Set());
+    const failed = results.filter((r) => r.status === 'rejected').length;
+    const deleted = ids.length - failed;
     setShowBulkDeleteModal(false);
     setBulkDeleting(false);
-    const failed = ids.length - deleted.length;
-    setSuccessMessage(
-      failed > 0
-        ? `${deleted.length} excluido(s). ${failed} nao puderam ser excluidos.`
-        : `${deleted.length} cobrador${deleted.length !== 1 ? 'es' : ''} excluido${deleted.length !== 1 ? 's' : ''} com sucesso.`,
-    );
+    reload();
+    if (failed > 0) {
+      toast.error(`${deleted} excluído(s). ${failed} não puderam ser excluídos.`);
+    } else {
+      toast.success(
+        `${deleted} cobrador${deleted !== 1 ? 'es' : ''} excluído${deleted !== 1 ? 's' : ''} com sucesso.`,
+      );
+    }
   }
 
   function updateField(field: keyof CollectorFormState, value: string | boolean) {
     setForm((current) => ({ ...current, [field]: value }));
     setFormError(null);
-    setSuccessMessage(null);
   }
 
   function openCreate() {
     setForm(emptyForm);
     setFormOpen(true);
     setFormError(null);
-    setSuccessMessage(null);
   }
 
   function openEdit(collector: Collector) {
@@ -151,34 +170,28 @@ export default function CollectorsPage() {
 
     const payload = buildCollectorPayload(form);
     if (payload === null) {
-      setFormError('Latitude e longitude devem ser numeros validos.');
+      setFormError('Latitude e longitude devem ser números válidos.');
       return;
     }
 
     setSaving(true);
     try {
       if (editingCollector) {
-        const updated = await apiRequest<Collector>(
-          `/collectors/${editingCollector.id}`,
-          { method: 'PATCH', body: payload },
-        );
-        setCollectors((current) =>
-          current.map((c) => (c.id === updated.id ? updated : c)),
-        );
-        closeEdit();
-        setSuccessMessage('Cobrador atualizado com sucesso.');
-      } else {
-        const created = await apiRequest<Collector>('/collectors', {
-          method: 'POST',
+        await apiRequest<Collector>(`/collectors/${editingCollector.id}`, {
+          method: 'PATCH',
           body: payload,
         });
-        setCollectors((current) => [created, ...current]);
+        closeEdit();
+        toast.success('Cobrador atualizado com sucesso.');
+      } else {
+        await apiRequest<Collector>('/collectors', { method: 'POST', body: payload });
         closeCreate();
-        setSuccessMessage('Cobrador cadastrado com sucesso.');
+        toast.success('Cobrador cadastrado com sucesso.');
       }
+      reload();
     } catch (err: unknown) {
       setFormError(
-        err instanceof ApiError ? err.message : 'Nao foi possivel salvar o cobrador.',
+        err instanceof ApiError ? err.message : 'Não foi possível salvar o cobrador.',
       );
     } finally {
       setSaving(false);
@@ -190,14 +203,13 @@ export default function CollectorsPage() {
     setDeleting(true);
     try {
       await apiRequest(`/collectors/${deletingCollector.id}`, { method: 'DELETE' });
-      setCollectors((current) => current.filter((c) => c.id !== deletingCollector.id));
-      setSelectedIds((prev) => { const next = new Set(prev); next.delete(deletingCollector.id); return next; });
       setDeletingCollector(null);
-      setSuccessMessage('Cobrador excluido com sucesso.');
+      toast.success('Cobrador excluído com sucesso.');
+      reload();
     } catch (err: unknown) {
       setDeletingCollector(null);
       setFormError(
-        err instanceof ApiError ? err.message : 'Nao foi possivel excluir o cobrador.',
+        err instanceof ApiError ? err.message : 'Não foi possível excluir o cobrador.',
       );
     } finally {
       setDeleting(false);
@@ -216,12 +228,12 @@ export default function CollectorsPage() {
         <TextField label="WhatsApp" value={form.whatsappPhone} onChange={(v) => updateField('whatsappPhone', v)} />
         <TextField label="Email" type="email" value={form.email} required onChange={(v) => updateField('email', v)} />
         <SelectField
-          label="Usuario vinculado"
+          label="Usuário vinculado"
           value={form.userId}
           disabled={usersLoading}
           onChange={(v) => updateField('userId', v)}
           options={userOptions}
-          placeholder={usersLoading ? 'Carregando usuarios...' : 'Sem usuario vinculado'}
+          placeholder={usersLoading ? 'Carregando usuários...' : 'Sem usuário vinculado'}
         />
         <TextField label="Latitude atual" type="number" step="any" value={form.currentLatitude} onChange={(v) => updateField('currentLatitude', v)} />
         <TextField label="Longitude atual" type="number" step="any" value={form.currentLongitude} onChange={(v) => updateField('currentLongitude', v)} />
@@ -235,10 +247,15 @@ export default function CollectorsPage() {
         />
         Cobrador ativo
       </label>
-      {usersError ? <Alert tone="warning" message="Nao foi possivel carregar usuarios. O cobrador pode ser cadastrado sem usuario." /> : null}
+      {usersError ? (
+        <Alert
+          tone="warning"
+          message="Não foi possível carregar usuários. O cobrador pode ser cadastrado sem usuário."
+        />
+      ) : null}
       {formError ? <Alert tone="error" message={formError} /> : null}
       <FormActions
-        submitLabel={saving ? 'Salvando...' : editingCollector ? 'Salvar alteracoes' : 'Cadastrar cobrador'}
+        submitLabel={saving ? 'Salvando...' : editingCollector ? 'Salvar alterações' : 'Cadastrar cobrador'}
         saving={saving}
         onCancel={editingCollector ? closeEdit : closeCreate}
       />
@@ -250,7 +267,7 @@ export default function CollectorsPage() {
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <PageHeader
           title="Cobradores"
-          description="Equipe responsavel pelas visitas e tarefas de cobranca."
+          description="Equipe responsável pelas visitas e tarefas de cobrança."
         />
         <button
           type="button"
@@ -261,13 +278,35 @@ export default function CollectorsPage() {
         </button>
       </div>
 
-      {successMessage ? <Alert tone="success" message={successMessage} /> : null}
-
       {formOpen ? (
         <section className="mb-6 rounded-md border border-line bg-white p-4 shadow-sm">
           {collectorForm}
         </section>
       ) : null}
+
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Buscar por nome, email ou telefone..."
+        />
+        <div className="flex gap-1">
+          {activeFilterOptions.map((f) => (
+            <button
+              key={String(f.value)}
+              type="button"
+              onClick={() => setFilters({ active: f.value })}
+              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                filters.active === f.value
+                  ? 'bg-brand text-white'
+                  : 'bg-white border border-line text-muted hover:border-brand hover:text-brand'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {loading ? <DataState message="Carregando cobradores" /> : null}
       {error ? <DataState message={error} /> : null}
@@ -290,17 +329,17 @@ export default function CollectorsPage() {
                 onClick={() => setSelectedIds(new Set())}
                 className="text-xs text-muted hover:text-ink"
               >
-                Limpar selecao
+                Limpar seleção
               </button>
             </div>
           ) : null}
           <DataTable
-            columns={['Nome', 'Telefone', 'Email', 'Ativo', 'Acoes']}
-            rowIds={collectors.map((c) => c.id)}
+            columns={['Nome', 'Telefone', 'Email', 'Ativo', 'Ações']}
+            rowIds={items.map((c) => c.id)}
             selectedIds={selectedIds}
             onToggleSelect={toggleSelect}
             onToggleAll={toggleAll}
-            rows={collectors.map((collector) => [
+            rows={items.map((collector) => [
               <Link
                 key={`name-${collector.id}`}
                 href={`/collectors/${collector.id}`}
@@ -319,6 +358,11 @@ export default function CollectorsPage() {
             ])}
             emptyMessage="Nenhum cobrador encontrado."
           />
+          {meta && meta.totalPages > 1 ? (
+            <div className="mt-4">
+              <Pagination meta={meta} onPageChange={setPage} />
+            </div>
+          ) : null}
         </>
       ) : null}
 
@@ -329,11 +373,15 @@ export default function CollectorsPage() {
       ) : null}
 
       {showBulkDeleteModal ? (
-        <Modal title="Excluir cobradores" onClose={() => setShowBulkDeleteModal(false)} maxWidth="sm">
+        <Modal
+          title="Excluir cobradores"
+          onClose={() => setShowBulkDeleteModal(false)}
+          maxWidth="sm"
+        >
           <p className="mb-4 text-sm text-ink">
             Tem certeza que deseja excluir{' '}
             <strong>{selectedIds.size} cobrador{selectedIds.size !== 1 ? 'es' : ''}</strong>?
-            {' '}Esta acao nao pode ser desfeita.
+            {' '}Esta ação não pode ser desfeita.
           </p>
           <div className="flex justify-end gap-2">
             <button
@@ -356,10 +404,14 @@ export default function CollectorsPage() {
       ) : null}
 
       {deletingCollector ? (
-        <Modal title="Excluir cobrador" onClose={() => setDeletingCollector(null)} maxWidth="sm">
+        <Modal
+          title="Excluir cobrador"
+          onClose={() => setDeletingCollector(null)}
+          maxWidth="sm"
+        >
           <p className="mb-4 text-sm text-ink">
             Tem certeza que deseja excluir o cobrador{' '}
-            <strong>{deletingCollector.name}</strong>? Esta acao nao pode ser desfeita.
+            <strong>{deletingCollector.name}</strong>? Esta ação não pode ser desfeita.
           </p>
           <div className="flex justify-end gap-2">
             <button

@@ -3,9 +3,23 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../infra/prisma/prisma.service';
+import {
+  buildPaginatedResult,
+  getPaginationParams,
+  resolveOrderBy,
+} from '../common/pagination';
 import { CreateCollectionDto } from './dto/create-collection.dto';
+import { ListCollectionsQueryDto } from './dto/list-collections-query.dto';
 import { UpdateCollectionDto } from './dto/update-collection.dto';
+
+const COLLECTION_SORT_FIELDS = [
+  'dueDate',
+  'createdAt',
+  'amount',
+  'status',
+] as const;
 
 @Injectable()
 export class CollectionService {
@@ -26,16 +40,39 @@ export class CollectionService {
     });
   }
 
-  findAll(companyId: string) {
-    return this.prisma.collection.findMany({
-      where: {
-        companyId,
-        deletedAt: null,
-      },
-      orderBy: {
-        dueDate: 'asc',
-      },
-    });
+  async findAll(companyId: string, query: ListCollectionsQueryDto) {
+    const { page, limit, skip, take } = getPaginationParams(query);
+    const search = query.search?.trim();
+
+    const where: Prisma.CollectionWhereInput = {
+      companyId,
+      deletedAt: null,
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.clientId ? { clientId: query.clientId } : {}),
+      ...(search
+        ? {
+            OR: [
+              { title: { contains: search, mode: 'insensitive' } },
+              { description: { contains: search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+
+    const orderBy = resolveOrderBy(
+      query.sortBy,
+      query.sortOrder,
+      COLLECTION_SORT_FIELDS,
+      'dueDate',
+      'asc',
+    );
+
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.collection.findMany({ where, orderBy, skip, take }),
+      this.prisma.collection.count({ where }),
+    ]);
+
+    return buildPaginatedResult(data, total, page, limit);
   }
 
   async findOne(companyId: string, id: string) {

@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
@@ -14,6 +15,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { ClientService } from './client.service';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
@@ -34,8 +36,18 @@ export class ClientController {
 
   @Get()
   @Roles(UserRole.admin, UserRole.manager, UserRole.viewer)
-  findAll(@CurrentUser() user: AuthenticatedUser) {
-    return this.clientService.findAll(user.companyId);
+  findAll(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: PaginationQueryDto,
+  ) {
+    return this.clientService.findAll(user.companyId, query);
+  }
+
+  // Declarado antes de ':id' para nao ser capturado pela rota de parametro.
+  @Get('distinct-locations')
+  @Roles(UserRole.admin, UserRole.manager, UserRole.viewer)
+  getDistinctLocations(@CurrentUser() user: AuthenticatedUser) {
+    return this.clientService.getDistinctLocations(user.companyId);
   }
 
   @Get(':id')

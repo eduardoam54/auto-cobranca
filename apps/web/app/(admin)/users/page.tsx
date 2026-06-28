@@ -2,13 +2,16 @@
 
 import { DataState } from '@/components/data-state';
 import { PageHeader } from '@/components/page-header';
+import { Pagination } from '@/components/pagination';
+import { SearchInput } from '@/components/search-input';
 import { StatusPill } from '@/components/status-pill';
 import { DataTable } from '@/components/table';
-import { useApiData } from '@/lib/use-api-data';
+import { usePaginatedData } from '@/lib/use-paginated-data';
 import type { User } from '@/lib/types';
 
 export default function UsersPage() {
-  const { data, loading, error } = useApiData<User[]>('/users');
+  const { items, meta, loading, error, setPage, search, setSearch } =
+    usePaginatedData<User>('/users');
 
   return (
     <>
@@ -16,19 +19,29 @@ export default function UsersPage() {
         title="Usuarios"
         description="Usuarios autorizados a acessar o painel."
       />
+      <div className="my-4">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Buscar por nome ou email..."
+        />
+      </div>
       {loading ? <DataState message="Carregando usuarios" /> : null}
       {error ? <DataState message={error} /> : null}
-      {data ? (
-        <DataTable
-          columns={['Nome', 'Email', 'Perfil', 'Status ativo']}
-          rows={data.map((user) => [
-            user.name,
-            user.email,
-            user.role,
-            <StatusPill key={user.id} value={user.active} />,
-          ])}
-          emptyMessage="Nenhum usuario encontrado."
-        />
+      {!loading && !error ? (
+        <>
+          <DataTable
+            columns={['Nome', 'Email', 'Perfil', 'Status ativo']}
+            rows={items.map((user) => [
+              user.name,
+              user.email,
+              user.role,
+              <StatusPill key={user.id} value={user.active} />,
+            ])}
+            emptyMessage="Nenhum usuario encontrado."
+          />
+          <Pagination meta={meta} onPageChange={setPage} />
+        </>
       ) : null}
     </>
   );

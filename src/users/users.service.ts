@@ -6,8 +6,16 @@ import {
 import { Prisma, User } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../infra/prisma/prisma.service';
+import {
+  buildPaginatedResult,
+  getPaginationParams,
+  resolveOrderBy,
+} from '../common/pagination';
 import { CreateUserDto } from './dto/create-user.dto';
+import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+
+const USER_SORT_FIELDS = ['name', 'email', 'createdAt'] as const;
 
 export type SafeUser = Omit<User, 'passwordHash'>;
 
@@ -38,18 +46,43 @@ export class UserService {
     }
   }
 
-  async findAll(companyId: string) {
-    const users = await this.prisma.user.findMany({
-      where: {
-        companyId,
-        deletedAt: null,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
+  async findAll(companyId: string, query: ListUsersQueryDto) {
+    const { page, limit, skip, take } = getPaginationParams(query);
+    const search = query.search?.trim();
 
-    return users.map((user) => this.toSafeUser(user));
+    const where: Prisma.UserWhereInput = {
+      companyId,
+      deletedAt: null,
+      ...(query.role ? { role: query.role } : {}),
+      ...(query.active !== undefined ? { active: query.active } : {}),
+      ...(search
+        ? {
+            OR: [
+              { name: { contains: search, mode: 'insensitive' } },
+              { email: { contains: search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+
+    const orderBy = resolveOrderBy(
+      query.sortBy,
+      query.sortOrder,
+      USER_SORT_FIELDS,
+      'createdAt',
+    );
+
+    const [users, total] = await this.prisma.$transaction([
+      this.prisma.user.findMany({ where, orderBy, skip, take }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    return buildPaginatedResult(
+      users.map((user) => this.toSafeUser(user)),
+      total,
+      page,
+      limit,
+    );
   }
 
   async findOne(id: string, companyId?: string) {

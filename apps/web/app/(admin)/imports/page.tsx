@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert } from '@/components/alert';
 import { PageHeader } from '@/components/page-header';
 import { getToken } from '@/lib/auth';
-import { useApiData } from '@/lib/use-api-data';
+import { useApiList } from '@/lib/use-paginated-data';
 import type { Collector } from '@/lib/types';
 
 type ExtractedRow = {
@@ -47,7 +47,7 @@ export default function ImportsPage() {
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [collectorId, setCollectorId] = useState('');
 
-  const { data: collectorsData } = useApiData<Collector[]>('/collectors');
+  const { data: collectorsData } = useApiList<Collector>('/collectors');
 
   const authHeaders = (): Record<string, string> => {
     const token = getToken();

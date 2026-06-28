@@ -1,18 +1,21 @@
 'use client';
 
 import Link from 'next/link';
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { Alert } from '@/components/alert';
 import { DataState } from '@/components/data-state';
 import { DataTable } from '@/components/table';
 import { FormActions } from '@/components/form-actions';
 import { Modal } from '@/components/modal';
 import { PageHeader } from '@/components/page-header';
+import { Pagination } from '@/components/pagination';
+import { SearchInput } from '@/components/search-input';
 import { SelectField } from '@/components/select-field';
 import { TextField } from '@/components/text-field';
 import { ApiError, apiRequest } from '@/lib/api';
 import { formatText } from '@/lib/format';
 import { useApiData } from '@/lib/use-api-data';
+import { usePaginatedData } from '@/lib/use-paginated-data';
 import type { Client } from '@/lib/types';
 
 type ClientFormState = {
@@ -25,6 +28,12 @@ type ClientFormState = {
   city: string;
   state: string;
   notes: string;
+};
+
+type DistinctLocations = {
+  addresses: string[];
+  neighborhoods: string[];
+  cities: string[];
 };
 
 const emptyForm: ClientFormState = {
@@ -64,13 +73,22 @@ function clientToForm(client: Client): ClientFormState {
   };
 }
 
-function unique(values: (string | null | undefined)[]): string[] {
-  return [...new Set(values.filter((v): v is string => !!v?.trim()))].sort();
-}
-
 export default function ClientsPage() {
-  const { data, loading, error } = useApiData<Client[]>('/clients');
-  const [clients, setClients] = useState<Client[]>([]);
+  const {
+    items: clients,
+    meta,
+    loading,
+    error,
+    page,
+    setPage,
+    search,
+    setSearch,
+    reload,
+  } = usePaginatedData<Client>('/clients');
+  const { data: locations } = useApiData<DistinctLocations>(
+    '/clients/distinct-locations',
+  );
+
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState<ClientFormState>(emptyForm);
   const [saving, setSaving] = useState(false);
@@ -84,12 +102,12 @@ export default function ClientsPage() {
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
   useEffect(() => {
-    if (data) { setClients(data); setSelectedIds(new Set()); }
-  }, [data]);
+    setSelectedIds(new Set());
+  }, [clients]);
 
-  const suggestionAddresses    = useMemo(() => unique(clients.map((c) => c.address)),     [clients]);
-  const suggestionNeighborhoods = useMemo(() => unique(clients.map((c) => c.neighborhood)), [clients]);
-  const suggestionCities        = useMemo(() => unique(clients.map((c) => c.city)),        [clients]);
+  const suggestionAddresses = locations?.addresses ?? [];
+  const suggestionNeighborhoods = locations?.neighborhoods ?? [];
+  const suggestionCities = locations?.cities ?? [];
 
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
@@ -110,7 +128,6 @@ export default function ClientsPage() {
       ids.map((id) => apiRequest(`/clients/${id}`, { method: 'DELETE' })),
     );
     const deleted = ids.filter((_, i) => results[i].status === 'fulfilled');
-    setClients((prev) => prev.filter((c) => !deleted.includes(c.id)));
     setSelectedIds(new Set());
     setShowBulkDeleteModal(false);
     setBulkDeleting(false);
@@ -120,6 +137,7 @@ export default function ClientsPage() {
         ? `${deleted.length} excluido(s). ${failed} nao puderam ser excluidos.`
         : `${deleted.length} cliente${deleted.length !== 1 ? 's' : ''} excluido${deleted.length !== 1 ? 's' : ''} com sucesso.`,
     );
+    reload();
   }
 
   function updateField(field: keyof ClientFormState, value: string) {
@@ -167,22 +185,21 @@ export default function ClientsPage() {
     setSaving(true);
     try {
       if (editingClient) {
-        const updated = await apiRequest<Client>(`/clients/${editingClient.id}`, {
+        await apiRequest<Client>(`/clients/${editingClient.id}`, {
           method: 'PATCH',
           body: payload,
         });
-        setClients((current) => current.map((c) => (c.id === updated.id ? updated : c)));
         closeEdit();
         setSuccessMessage('Cliente atualizado com sucesso.');
       } else {
-        const created = await apiRequest<Client>('/clients', {
+        await apiRequest<Client>('/clients', {
           method: 'POST',
           body: payload,
         });
-        setClients((current) => [created, ...current]);
         closeCreate();
         setSuccessMessage('Cliente cadastrado com sucesso.');
       }
+      reload();
     } catch (err: unknown) {
       setFormError(err instanceof ApiError ? err.message : 'Nao foi possivel salvar o cliente.');
     } finally {
@@ -195,10 +212,9 @@ export default function ClientsPage() {
     setDeleting(true);
     try {
       await apiRequest(`/clients/${deletingClient.id}`, { method: 'DELETE' });
-      setClients((current) => current.filter((c) => c.id !== deletingClient.id));
-      setSelectedIds((prev) => { const next = new Set(prev); next.delete(deletingClient.id); return next; });
       setDeletingClient(null);
       setSuccessMessage('Cliente excluido com sucesso.');
+      reload();
     } catch (err: unknown) {
       setDeletingClient(null);
       setSuccessMessage(null);
@@ -295,6 +311,14 @@ export default function ClientsPage() {
         </section>
       ) : null}
 
+      <div className="mb-4">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Buscar por nome, documento, telefone, cidade..."
+        />
+      </div>
+
       {loading ? <DataState message="Carregando clientes" /> : null}
       {error ? <DataState message={error} /> : null}
       {!loading && !error ? (
@@ -346,6 +370,7 @@ export default function ClientsPage() {
             ])}
             emptyMessage="Nenhum cliente encontrado."
           />
+          <Pagination meta={meta} onPageChange={setPage} />
         </>
       ) : null}
 

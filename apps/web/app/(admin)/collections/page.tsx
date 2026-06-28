@@ -2,18 +2,21 @@
 
 import Link from 'next/link';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { Alert } from '@/components/alert';
 import { DataState } from '@/components/data-state';
 import { DataTable } from '@/components/table';
 import { FormActions } from '@/components/form-actions';
 import { Modal } from '@/components/modal';
 import { PageHeader } from '@/components/page-header';
+import { Pagination } from '@/components/pagination';
+import { SearchInput } from '@/components/search-input';
 import { SelectField } from '@/components/select-field';
 import { StatusPill } from '@/components/status-pill';
 import { TextField } from '@/components/text-field';
 import { ApiError, apiRequest } from '@/lib/api';
-import { formatCurrency, formatDate, formatText } from '@/lib/format';
-import { useApiData } from '@/lib/use-api-data';
+import { formatCurrency, formatDate } from '@/lib/format';
+import { useApiList, usePaginatedData } from '@/lib/use-paginated-data';
 import type { Client, Collection, CollectionTask, Collector } from '@/lib/types';
 
 type CollectionFormState = {
@@ -44,9 +47,18 @@ const paymentMethodOptions = [
   'cash', 'pix', 'bank_slip', 'credit_card', 'debit_card', 'other',
 ].map((m) => ({ value: m, label: formatLabel(m) }));
 
+const statusFilterOptions = [
+  { value: '', label: 'Todas' },
+  { value: 'pending', label: 'Pendente' },
+  { value: 'overdue', label: 'Vencida' },
+  { value: 'paid', label: 'Paga' },
+  { value: 'canceled', label: 'Cancelada' },
+  { value: 'renegotiated', label: 'Renegociada' },
+];
+
 const requiredFields = [
   { key: 'clientId', label: 'cliente' },
-  { key: 'title', label: 'titulo' },
+  { key: 'title', label: 'título' },
   { key: 'amount', label: 'valor' },
   { key: 'dueDate', label: 'vencimento' },
   { key: 'status', label: 'status' },
@@ -65,17 +77,28 @@ function collectionToForm(c: Collection): CollectionFormState {
 }
 
 export default function CollectionsPage() {
-  const { data, loading, error } = useApiData<Collection[]>('/collections');
+  const {
+    items,
+    meta,
+    loading,
+    error,
+    page,
+    setPage,
+    search,
+    setSearch,
+    filters,
+    setFilters,
+    reload,
+  } = usePaginatedData<Collection>('/collections');
   const { data: clientsData, loading: clientsLoading, error: clientsError } =
-    useApiData<Client[]>('/clients');
-  const { data: collectorsData } = useApiData<Collector[]>('/collectors');
-  const { data: tasksData } = useApiData<CollectionTask[]>('/collection-tasks');
-  const [collections, setCollections] = useState<Collection[]>([]);
+    useApiList<Client>('/clients');
+  const { data: collectorsData } = useApiList<Collector>('/collectors');
+  const { data: tasksData } = useApiList<CollectionTask>('/collection-tasks');
+
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState<CollectionFormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [editingCollection, setEditingCollection] = useState<Collection | null>(null);
   const [deletingCollection, setDeletingCollection] = useState<Collection | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -85,8 +108,8 @@ export default function CollectionsPage() {
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
   useEffect(() => {
-    if (data) { setCollections(data); setSelectedIds(new Set()); }
-  }, [data]);
+    setSelectedIds(new Set());
+  }, [items]);
 
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
@@ -97,7 +120,7 @@ export default function CollectionsPage() {
   }
 
   function toggleAll(selectAll: boolean) {
-    setSelectedIds(selectAll ? new Set(collections.map((c) => c.id)) : new Set());
+    setSelectedIds(selectAll ? new Set(items.map((c) => c.id)) : new Set());
   }
 
   async function handleBulkDelete() {
@@ -106,30 +129,29 @@ export default function CollectionsPage() {
     const results = await Promise.allSettled(
       ids.map((id) => apiRequest(`/collections/${id}`, { method: 'DELETE' })),
     );
-    const deleted = ids.filter((_, i) => results[i].status === 'fulfilled');
-    setCollections((prev) => prev.filter((c) => !deleted.includes(c.id)));
-    setSelectedIds(new Set());
+    const failed = results.filter((r) => r.status === 'rejected').length;
+    const deleted = ids.length - failed;
     setShowBulkDeleteModal(false);
     setBulkDeleting(false);
-    const failed = ids.length - deleted.length;
-    setSuccessMessage(
-      failed > 0
-        ? `${deleted.length} excluida(s). ${failed} nao puderam ser excluidas.`
-        : `${deleted.length} cobranca${deleted.length !== 1 ? 's' : ''} excluida${deleted.length !== 1 ? 's' : ''} com sucesso.`,
-    );
+    reload();
+    if (failed > 0) {
+      toast.error(`${deleted} excluída(s). ${failed} não puderam ser excluídas.`);
+    } else {
+      toast.success(
+        `${deleted} cobrança${deleted !== 1 ? 's' : ''} excluída${deleted !== 1 ? 's' : ''} com sucesso.`,
+      );
+    }
   }
 
   function updateField(field: keyof CollectionFormState, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
     setFormError(null);
-    setSuccessMessage(null);
   }
 
   function openCreate() {
     setForm(emptyForm);
     setFormOpen(true);
     setFormError(null);
-    setSuccessMessage(null);
   }
 
   function openEdit(collection: Collection) {
@@ -158,13 +180,13 @@ export default function CollectionsPage() {
 
     const missingField = requiredFields.find((f) => !form[f.key].trim());
     if (missingField) {
-      setFormError(`Informe o ${missingField.label} da cobranca.`);
+      setFormError(`Informe o ${missingField.label} da cobrança.`);
       return;
     }
 
     const amount = Number(form.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
-      setFormError('O valor da cobranca deve ser um numero maior que zero.');
+      setFormError('O valor da cobrança deve ser um número maior que zero.');
       return;
     }
 
@@ -173,12 +195,9 @@ export default function CollectionsPage() {
 
     try {
       if (editingCollection) {
-        const updated = await apiRequest<Collection>(
+        await apiRequest<Collection>(
           `/collections/${editingCollection.id}`,
           { method: 'PATCH', body: payload },
-        );
-        setCollections((current) =>
-          current.map((c) => (c.id === updated.id ? updated : c)),
         );
 
         if (assignedCollectorId) {
@@ -188,7 +207,7 @@ export default function CollectionsPage() {
               clientId: editingCollection.clientId,
               collectionId: editingCollection.id,
               collectorId: assignedCollectorId,
-              title: `Cobranca: ${editingCollection.title}`,
+              title: `Cobrança: ${editingCollection.title}`,
               type: 'presencial_collection',
               priority: 'medium',
               status: 'assigned',
@@ -197,23 +216,20 @@ export default function CollectionsPage() {
         }
 
         closeEdit();
-        setSuccessMessage(
+        toast.success(
           assignedCollectorId
-            ? 'Cobranca atualizada e cobrador atribuido com sucesso.'
-            : 'Cobranca atualizada com sucesso.',
+            ? 'Cobrança atualizada e cobrador atribuído com sucesso.'
+            : 'Cobrança atualizada com sucesso.',
         );
       } else {
-        const created = await apiRequest<Collection>('/collections', {
-          method: 'POST',
-          body: payload,
-        });
-        setCollections((current) => [created, ...current]);
+        await apiRequest<Collection>('/collections', { method: 'POST', body: payload });
         closeCreate();
-        setSuccessMessage('Cobranca cadastrada com sucesso.');
+        toast.success('Cobrança cadastrada com sucesso.');
       }
+      reload();
     } catch (err: unknown) {
       setFormError(
-        err instanceof ApiError ? err.message : 'Nao foi possivel salvar a cobranca.',
+        err instanceof ApiError ? err.message : 'Não foi possível salvar a cobrança.',
       );
     } finally {
       setSaving(false);
@@ -225,16 +241,13 @@ export default function CollectionsPage() {
     setDeleting(true);
     try {
       await apiRequest(`/collections/${deletingCollection.id}`, { method: 'DELETE' });
-      setCollections((current) =>
-        current.filter((c) => c.id !== deletingCollection.id),
-      );
-      setSelectedIds((prev) => { const next = new Set(prev); next.delete(deletingCollection.id); return next; });
       setDeletingCollection(null);
-      setSuccessMessage('Cobranca excluida com sucesso.');
+      toast.success('Cobrança excluída com sucesso.');
+      reload();
     } catch (err: unknown) {
       setDeletingCollection(null);
       setFormError(
-        err instanceof ApiError ? err.message : 'Nao foi possivel excluir a cobranca.',
+        err instanceof ApiError ? err.message : 'Não foi possível excluir a cobrança.',
       );
     } finally {
       setDeleting(false);
@@ -255,7 +268,6 @@ export default function CollectionsPage() {
     [collectorsData],
   );
 
-  // For each collectionId, pick the most relevant active task that has a collector
   const collectorByCollection = useMemo(() => {
     const STATUS_PRIORITY: Record<string, number> = {
       in_progress: 0,
@@ -270,18 +282,16 @@ export default function CollectionsPage() {
       if (!task.collectionId || !task.collectorId) continue;
       const existing = result.get(task.collectionId);
       const priority = STATUS_PRIORITY[task.status] ?? 99;
-      const existingPriority = existing
-        ? (STATUS_PRIORITY[existing.status] ?? 99)
-        : 999;
+      const existingPriority = existing ? (STATUS_PRIORITY[existing.status] ?? 99) : 999;
       if (priority < existingPriority) {
         const name = collectorById.get(task.collectorId);
-        if (name) {
-          result.set(task.collectionId, { name, status: task.status });
-        }
+        if (name) result.set(task.collectionId, { name, status: task.status });
       }
     }
     return result;
   }, [tasksData, collectorById]);
+
+  const statusFilter = (filters.status as string | undefined) ?? '';
 
   const collectionForm = (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -296,7 +306,7 @@ export default function CollectionsPage() {
           placeholder={clientsLoading ? 'Carregando clientes' : 'Selecione um cliente'}
         />
         <TextField
-          label="Titulo"
+          label="Título"
           value={form.title}
           required
           onChange={(v) => updateField('title', v)}
@@ -332,7 +342,7 @@ export default function CollectionsPage() {
         />
       </div>
       <label className="block text-sm font-medium text-ink">
-        Descricao
+        Descrição
         <textarea
           value={form.description}
           onChange={(e) => updateField('description', e.target.value)}
@@ -346,7 +356,7 @@ export default function CollectionsPage() {
             Atribuir cobrador
           </p>
           <SelectField
-            label="Cobrador responsavel"
+            label="Cobrador responsável"
             value={assignedCollectorId}
             onChange={setAssignedCollectorId}
             options={collectorOptions}
@@ -359,18 +369,20 @@ export default function CollectionsPage() {
           />
           {assignedCollectorId ? (
             <p className="mt-2 text-xs text-muted">
-              Uma tarefa de cobranca presencial sera criada e atribuida a este cobrador ao salvar.
+              Uma tarefa de cobrança presencial será criada e atribuída a este cobrador ao salvar.
             </p>
           ) : null}
         </div>
       ) : null}
-      {clientsError ? <Alert tone="warning" message="Nao foi possivel carregar clientes." /> : null}
+      {clientsError ? (
+        <Alert tone="warning" message="Não foi possível carregar clientes." />
+      ) : null}
       {!clientsLoading && clientOptions.length === 0 ? (
-        <Alert tone="warning" message="Cadastre um cliente antes de criar uma cobranca." />
+        <Alert tone="warning" message="Cadastre um cliente antes de criar uma cobrança." />
       ) : null}
       {formError ? <Alert tone="error" message={formError} /> : null}
       <FormActions
-        submitLabel={saving ? 'Salvando...' : editingCollection ? 'Salvar alteracoes' : 'Cadastrar cobranca'}
+        submitLabel={saving ? 'Salvando...' : editingCollection ? 'Salvar alterações' : 'Cadastrar cobrança'}
         saving={saving}
         disabled={clientsLoading || clientOptions.length === 0}
         onCancel={editingCollection ? closeEdit : closeCreate}
@@ -382,19 +394,17 @@ export default function CollectionsPage() {
     <>
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <PageHeader
-          title="Cobrancas"
-          description="Cobrancas cadastradas e seus status atuais."
+          title="Cobranças"
+          description="Cobranças cadastradas e seus status atuais."
         />
         <button
           type="button"
           onClick={openCreate}
           className="inline-flex min-h-10 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-white hover:bg-teal-800"
         >
-          Nova Cobranca
+          Nova Cobrança
         </button>
       </div>
-
-      {successMessage ? <Alert tone="success" message={successMessage} /> : null}
 
       {formOpen ? (
         <section className="mb-6 rounded-md border border-line bg-white p-4 shadow-sm">
@@ -402,7 +412,31 @@ export default function CollectionsPage() {
         </section>
       ) : null}
 
-      {loading ? <DataState message="Carregando cobrancas" /> : null}
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Buscar por título ou descrição..."
+        />
+        <div className="flex flex-wrap gap-1">
+          {statusFilterOptions.map((f) => (
+            <button
+              key={f.value}
+              type="button"
+              onClick={() => setFilters({ status: f.value || undefined })}
+              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                statusFilter === f.value
+                  ? 'bg-brand text-white'
+                  : 'bg-white border border-line text-muted hover:border-brand hover:text-brand'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading ? <DataState message="Carregando cobranças" /> : null}
       {error ? <DataState message={error} /> : null}
       {!loading && !error ? (
         <>
@@ -423,17 +457,17 @@ export default function CollectionsPage() {
                 onClick={() => setSelectedIds(new Set())}
                 className="text-xs text-muted hover:text-ink"
               >
-                Limpar selecao
+                Limpar seleção
               </button>
             </div>
           ) : null}
           <DataTable
-            columns={['Titulo', 'Valor', 'Emissao', 'Vencimento', 'Dias Vencido', 'Status', 'Cobrador', 'Acoes']}
-            rowIds={collections.map((c) => c.id)}
+            columns={['Título', 'Valor', 'Emissão', 'Vencimento', 'Dias Vencido', 'Status', 'Cobrador', 'Ações']}
+            rowIds={items.map((c) => c.id)}
             selectedIds={selectedIds}
             onToggleSelect={toggleSelect}
             onToggleAll={toggleAll}
-            rows={collections.map((collection) => {
+            rows={items.map((collection) => {
               const assignment = collectorByCollection.get(collection.id);
               const daysOverdue = collection.dueDate
                 ? Math.floor((Date.now() - new Date(collection.dueDate).getTime()) / 86_400_000)
@@ -462,8 +496,13 @@ export default function CollectionsPage() {
                 />,
               ];
             })}
-            emptyMessage="Nenhuma cobranca encontrada."
+            emptyMessage="Nenhuma cobrança encontrada."
           />
+          {meta && meta.totalPages > 1 ? (
+            <div className="mt-4">
+              <Pagination meta={meta} onPageChange={setPage} />
+            </div>
+          ) : null}
         </>
       ) : null}
 
@@ -474,10 +513,10 @@ export default function CollectionsPage() {
       ) : null}
 
       {deletingCollection ? (
-        <Modal title="Excluir cobranca" onClose={() => setDeletingCollection(null)} maxWidth="sm">
+        <Modal title="Excluir cobrança" onClose={() => setDeletingCollection(null)} maxWidth="sm">
           <p className="mb-4 text-sm text-ink">
-            Tem certeza que deseja excluir a cobranca{' '}
-            <strong>{deletingCollection.title}</strong>? Esta acao nao pode ser desfeita.
+            Tem certeza que deseja excluir a cobrança{' '}
+            <strong>{deletingCollection.title}</strong>? Esta ação não pode ser desfeita.
           </p>
           <div className="flex justify-end gap-2">
             <button
@@ -500,11 +539,11 @@ export default function CollectionsPage() {
       ) : null}
 
       {showBulkDeleteModal ? (
-        <Modal title="Excluir cobrancas selecionadas" onClose={() => setShowBulkDeleteModal(false)} maxWidth="sm">
+        <Modal title="Excluir cobranças selecionadas" onClose={() => setShowBulkDeleteModal(false)} maxWidth="sm">
           <p className="mb-4 text-sm text-ink">
             Tem certeza que deseja excluir{' '}
-            <strong>{selectedIds.size} cobranca{selectedIds.size !== 1 ? 's' : ''}</strong>?{' '}
-            Esta acao nao pode ser desfeita.
+            <strong>{selectedIds.size} cobrança{selectedIds.size !== 1 ? 's' : ''}</strong>?{' '}
+            Esta ação não pode ser desfeita.
           </p>
           <div className="flex justify-end gap-2">
             <button
@@ -552,7 +591,7 @@ function CollectorCell({
   assignment: { name: string; status: string } | undefined;
 }) {
   if (!assignment) {
-    return <span className="text-xs text-muted">Nao atribuido</span>;
+    return <span className="text-xs text-muted">Não atribuído</span>;
   }
 
   const isActive =
@@ -563,7 +602,7 @@ function CollectorCell({
       <span className="text-sm font-medium text-ink">{assignment.name}</span>
       {isActive ? (
         <span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs font-semibold text-brand">
-          {assignment.status === 'in_progress' ? 'em andamento' : 'atribuido'}
+          {assignment.status === 'in_progress' ? 'em andamento' : 'atribuído'}
         </span>
       ) : (
         <span className="rounded-full bg-panel px-2 py-0.5 text-xs text-muted">

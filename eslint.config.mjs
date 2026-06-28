@@ -24,6 +24,23 @@ export default [
       ...tseslint.configs.recommended.rules,
     },
   },
+  {
+    // Globais de teste (jest) para os arquivos *.spec.ts.
+    files: ['src/**/*.spec.ts', 'test/**/*.ts'],
+    languageOptions: {
+      globals: {
+        describe: 'readonly',
+        it: 'readonly',
+        test: 'readonly',
+        expect: 'readonly',
+        beforeEach: 'readonly',
+        afterEach: 'readonly',
+        beforeAll: 'readonly',
+        afterAll: 'readonly',
+        jest: 'readonly',
+      },
+    },
+  },
   prettier,
 ];
 

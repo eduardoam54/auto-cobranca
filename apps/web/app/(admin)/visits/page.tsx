@@ -4,9 +4,11 @@ import { useMemo, useState } from 'react';
 import { DataState } from '@/components/data-state';
 import { Modal } from '@/components/modal';
 import { PageHeader } from '@/components/page-header';
+import { Pagination } from '@/components/pagination';
+import { SearchInput } from '@/components/search-input';
 import { StatusPill } from '@/components/status-pill';
 import { formatCurrency, formatDateTime } from '@/lib/format';
-import { useApiData } from '@/lib/use-api-data';
+import { useApiList, usePaginatedData } from '@/lib/use-paginated-data';
 import type { Client, CollectionVisit, Collector } from '@/lib/types';
 
 const MEDIA_BASE =
@@ -28,10 +30,20 @@ const resultFilters = [
 ];
 
 export default function VisitsPage() {
-  const { data: visits, loading, error } = useApiData<CollectionVisit[]>('/collection-visits');
-  const { data: collectors } = useApiData<Collector[]>('/collectors');
-  const { data: clients } = useApiData<Client[]>('/clients');
-  const [resultFilter, setResultFilter] = useState('');
+  const {
+    items: visits,
+    meta,
+    loading,
+    error,
+    page,
+    setPage,
+    search,
+    setSearch,
+    filters,
+    setFilters,
+  } = usePaginatedData<CollectionVisit>('/collection-visits');
+  const { data: collectors } = useApiList<Collector>('/collectors');
+  const { data: clients } = useApiList<Client>('/clients');
   const [selectedVisit, setSelectedVisit] = useState<CollectionVisit | null>(null);
 
   const collectorById = useMemo(
@@ -44,61 +56,63 @@ export default function VisitsPage() {
     [clients],
   );
 
-  const filtered = useMemo(() => {
-    if (!visits) return [];
-    if (!resultFilter) return visits;
-    return visits.filter((v) => v.result === resultFilter);
-  }, [visits, resultFilter]);
-
-  const total = visits?.length ?? 0;
-  const paid = visits?.filter((v) => v.result === 'paid' || v.result === 'partial_paid').length ?? 0;
-  const withPhoto = visits?.filter((v) => v.proofPhotoUrl).length ?? 0;
-  const withGps = visits?.filter((v) => v.latitude != null).length ?? 0;
+  const resultFilter = (filters.result as string | undefined) ?? '';
+  const total = meta?.total ?? 0;
+  const paid = visits.filter((v) => v.result === 'paid' || v.result === 'partial_paid').length;
+  const withPhoto = visits.filter((v) => v.proofPhotoUrl).length;
+  const withGps = visits.filter((v) => v.latitude != null).length;
 
   return (
     <>
       <PageHeader
         title="Visitas"
-        description="Historico de visitas de cobranca realizadas pelos cobradores."
+        description="Histórico de visitas de cobrança realizadas pelos cobradores."
       />
 
       {loading ? <DataState message="Carregando visitas" /> : null}
       {error ? <DataState message={error} /> : null}
 
-      {visits ? (
+      <div className="mb-6 grid gap-3 sm:grid-cols-4">
+        <StatCard label="Total de visitas" value={String(total)} />
+        <StatCard label="Com pagamento" value={String(paid)} color="text-emerald-600" />
+        <StatCard label="Com foto" value={String(withPhoto)} color="text-brand" />
+        <StatCard label="Com GPS" value={String(withGps)} color="text-blue-600" />
+      </div>
+
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Buscar por observações..."
+        />
+        <div className="flex flex-wrap gap-1">
+          {resultFilters.map((f) => (
+            <button
+              key={f.value}
+              type="button"
+              onClick={() => setFilters({ result: f.value || undefined })}
+              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                resultFilter === f.value
+                  ? 'bg-brand text-white'
+                  : 'bg-white border border-line text-muted hover:border-brand hover:text-brand'
+              }`}
+            >
+              {f.label}
+              {f.value === '' ? ` (${total})` : ''}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {!loading && !error ? (
         <>
-          <div className="mb-6 grid gap-3 sm:grid-cols-4">
-            <StatCard label="Total de visitas" value={String(total)} />
-            <StatCard label="Com pagamento" value={String(paid)} color="text-emerald-600" />
-            <StatCard label="Com foto" value={String(withPhoto)} color="text-brand" />
-            <StatCard label="Com GPS" value={String(withGps)} color="text-blue-600" />
-          </div>
-
-          <div className="mb-4 flex flex-wrap gap-2">
-            {resultFilters.map((f) => (
-              <button
-                key={f.value}
-                type="button"
-                onClick={() => setResultFilter(f.value)}
-                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-                  resultFilter === f.value
-                    ? 'bg-brand text-white'
-                    : 'bg-white border border-line text-muted hover:border-brand hover:text-brand'
-                }`}
-              >
-                {f.label}
-                {f.value === '' ? ` (${total})` : ''}
-              </button>
-            ))}
-          </div>
-
-          {filtered.length === 0 ? (
+          {visits.length === 0 ? (
             <div className="rounded-md border border-line bg-white px-4 py-6 text-sm text-muted">
               Nenhuma visita encontrada.
             </div>
           ) : (
             <div className="space-y-3">
-              {filtered.map((visit) => (
+              {visits.map((visit) => (
                 <VisitCard
                   key={visit.id}
                   visit={visit}
@@ -110,6 +124,11 @@ export default function VisitsPage() {
               ))}
             </div>
           )}
+          {meta && meta.totalPages > 1 ? (
+            <div className="mt-4">
+              <Pagination meta={meta} onPageChange={setPage} />
+            </div>
+          ) : null}
         </>
       ) : null}
 
@@ -247,20 +266,20 @@ function VisitDetailModal({
 
         {visit.notes ? (
           <div>
-            <p className="mb-1 text-xs font-semibold uppercase text-muted">Observacoes</p>
+            <p className="mb-1 text-xs font-semibold uppercase text-muted">Observações</p>
             <p className="text-sm text-ink">{visit.notes}</p>
           </div>
         ) : null}
 
         {visit.latitude != null && visit.longitude != null ? (
           <div className="rounded-md border border-blue-100 bg-blue-50 p-3">
-            <p className="mb-1 text-xs font-semibold uppercase text-blue-700">Localizacao GPS</p>
+            <p className="mb-1 text-xs font-semibold uppercase text-blue-700">Localização GPS</p>
             <p className="text-sm font-mono text-blue-800">
               {visit.latitude.toFixed(6)}, {visit.longitude.toFixed(6)}
             </p>
             {visit.locationAccuracy != null ? (
               <p className="text-xs text-blue-600">
-                Precisao: ±{Math.round(visit.locationAccuracy)}m
+                Precisão: ±{Math.round(visit.locationAccuracy)}m
               </p>
             ) : null}
             <a

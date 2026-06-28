@@ -8,6 +8,7 @@ import { PageHeader } from '@/components/page-header';
 import { StatusPill } from '@/components/status-pill';
 import { formatCurrency, formatDate, formatText } from '@/lib/format';
 import { useApiData } from '@/lib/use-api-data';
+import { useApiList } from '@/lib/use-paginated-data';
 import type { Client, Collection, Message } from '@/lib/types';
 
 export default function ClientDetailPage({
@@ -19,9 +20,9 @@ export default function ClientDetailPage({
   const { data: client, loading: clientLoading, error: clientError } =
     useApiData<Client>(`/clients/${id}`);
   const { data: allCollections, loading: collectionsLoading } =
-    useApiData<Collection[]>('/collections');
+    useApiList<Collection>(`/collections?clientId=${id}`);
   const { data: allMessages, loading: messagesLoading } =
-    useApiData<Message[]>('/messages');
+    useApiList<Message>('/messages');
 
   const collections = (allCollections ?? []).filter((c) => c.clientId === id);
   const messages = client

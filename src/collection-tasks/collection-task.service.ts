@@ -3,13 +3,27 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../infra/prisma/prisma.service';
 import { ExpoPushService } from '../infra/expo-push/expo-push.service';
+import {
+  buildPaginatedResult,
+  getPaginationParams,
+  resolveOrderBy,
+} from '../common/pagination';
 import { AssignCollectorDto } from './dto/assign-collector.dto';
 import { CompleteCollectionTaskDto } from './dto/complete-collection-task.dto';
 import { CreateCollectionTaskDto } from './dto/create-collection-task.dto';
 import { FailCollectionTaskDto } from './dto/fail-collection-task.dto';
+import { ListCollectionTasksQueryDto } from './dto/list-collection-tasks-query.dto';
 import { UpdateCollectionTaskDto } from './dto/update-collection-task.dto';
+
+const COLLECTION_TASK_SORT_FIELDS = [
+  'createdAt',
+  'priority',
+  'scheduledDate',
+  'status',
+] as const;
 
 @Injectable()
 export class CollectionTaskService {
@@ -38,16 +52,41 @@ export class CollectionTaskService {
     return task;
   }
 
-  findAll(companyId: string) {
-    return this.prisma.collectionTask.findMany({
-      where: {
-        companyId,
-        deletedAt: null,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
+  async findAll(companyId: string, query: ListCollectionTasksQueryDto) {
+    const { page, limit, skip, take } = getPaginationParams(query);
+    const search = query.search?.trim();
+
+    const where: Prisma.CollectionTaskWhereInput = {
+      companyId,
+      deletedAt: null,
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.priority ? { priority: query.priority } : {}),
+      ...(query.collectorId ? { collectorId: query.collectorId } : {}),
+      ...(query.clientId ? { clientId: query.clientId } : {}),
+      ...(search
+        ? {
+            OR: [
+              { title: { contains: search, mode: 'insensitive' } },
+              { description: { contains: search, mode: 'insensitive' } },
+              { address: { contains: search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+
+    const orderBy = resolveOrderBy(
+      query.sortBy,
+      query.sortOrder,
+      COLLECTION_TASK_SORT_FIELDS,
+      'createdAt',
+    );
+
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.collectionTask.findMany({ where, orderBy, skip, take }),
+      this.prisma.collectionTask.count({ where }),
+    ]);
+
+    return buildPaginatedResult(data, total, page, limit);
   }
 
   async findOne(companyId: string, id: string) {

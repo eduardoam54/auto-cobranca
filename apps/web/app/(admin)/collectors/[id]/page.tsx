@@ -8,6 +8,7 @@ import { PageHeader } from '@/components/page-header';
 import { StatusPill } from '@/components/status-pill';
 import { formatCurrency, formatDate, formatDateTime, formatText } from '@/lib/format';
 import { useApiData } from '@/lib/use-api-data';
+import { useApiList } from '@/lib/use-paginated-data';
 import type { Client, CollectionTask, CollectionVisit, Collector } from '@/lib/types';
 
 const RESULT_LABELS: Record<string, string> = {
@@ -31,11 +32,11 @@ export default function CollectorDetailPage({
   const { data: collector, loading: collectorLoading, error: collectorError } =
     useApiData<Collector>(`/collectors/${id}`);
   const { data: allTasks, loading: tasksLoading } =
-    useApiData<CollectionTask[]>('/collection-tasks');
+    useApiList<CollectionTask>(`/collection-tasks?collectorId=${id}`);
   const { data: allVisits, loading: visitsLoading } =
-    useApiData<CollectionVisit[]>('/collection-visits');
+    useApiList<CollectionVisit>(`/collection-visits?collectorId=${id}`);
   const { data: allClients } =
-    useApiData<Client[]>('/clients');
+    useApiList<Client>('/clients');
 
   const clientById = useMemo(
     () => new Map((allClients ?? []).map((c) => [c.id, c.name])),

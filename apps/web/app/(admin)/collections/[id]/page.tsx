@@ -8,6 +8,7 @@ import { PageHeader } from '@/components/page-header';
 import { StatusPill } from '@/components/status-pill';
 import { formatCurrency, formatDate, formatText } from '@/lib/format';
 import { useApiData } from '@/lib/use-api-data';
+import { useApiList } from '@/lib/use-paginated-data';
 import type { Client, Collection, CollectionTask } from '@/lib/types';
 
 export default function CollectionDetailPage({
@@ -19,8 +20,8 @@ export default function CollectionDetailPage({
   const { data: collection, loading: collectionLoading, error: collectionError } =
     useApiData<Collection>(`/collections/${id}`);
   const { data: allTasks, loading: tasksLoading } =
-    useApiData<CollectionTask[]>('/collection-tasks');
-  const { data: allClients } = useApiData<Client[]>('/clients');
+    useApiList<CollectionTask>('/collection-tasks');
+  const { data: allClients } = useApiList<Client>('/clients');
 
   const tasks = (allTasks ?? []).filter((t) => t.collectionId === id);
   const client = collection

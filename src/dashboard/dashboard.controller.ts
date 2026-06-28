@@ -7,6 +7,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { DashboardService } from './dashboard.service';
 import { DashboardSummaryQueryDto } from './dto/dashboard-summary-query.dto';
+import { ReportsQueryDto } from './dto/reports-query.dto';
 
 @Controller('dashboard')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -21,5 +22,14 @@ export class DashboardController {
     @Query() query: DashboardSummaryQueryDto,
   ) {
     return this.dashboardService.getSummary(user.companyId, query);
+  }
+
+  @Get('reports')
+  @Roles(UserRole.admin, UserRole.manager, UserRole.viewer)
+  getReports(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ReportsQueryDto,
+  ) {
+    return this.dashboardService.getReports(user.companyId, query);
   }
 }

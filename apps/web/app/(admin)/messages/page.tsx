@@ -1,31 +1,49 @@
 'use client';
 
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { Alert } from '@/components/alert';
 import { DataState } from '@/components/data-state';
 import { FormActions } from '@/components/form-actions';
 import { Modal } from '@/components/modal';
 import { PageHeader } from '@/components/page-header';
+import { Pagination } from '@/components/pagination';
+import { SearchInput } from '@/components/search-input';
 import { ApiError, apiRequest } from '@/lib/api';
-import { useApiData } from '@/lib/use-api-data';
+import { usePaginatedData } from '@/lib/use-paginated-data';
 import type { Message } from '@/lib/types';
 
 type SendResult = { messageId: string; externalMessageId: string };
 
+const directionFilters = [
+  { value: '', label: 'Todas' },
+  { value: 'inbound', label: 'Recebidas' },
+  { value: 'outbound', label: 'Enviadas' },
+];
+
 export default function MessagesPage() {
-  const { data, loading, error } = useApiData<Message[]>('/messages');
+  const {
+    items: data,
+    meta,
+    loading,
+    error,
+    page,
+    setPage,
+    search,
+    setSearch,
+    filters,
+    setFilters,
+  } = usePaginatedData<Message>('/messages');
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
   const [replyText, setReplyText] = useState('');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const inbound = (data ?? []).filter((m) => m.direction === 'inbound');
-  const outbound = (data ?? []).filter((m) => m.direction === 'outbound');
+  const directionFilter = (filters.direction as string | undefined) ?? '';
 
-  function openReply(message: Message, suggestion?: string | null) {
+  function openReply(message: Message) {
     setReplyTarget(message);
-    setReplyText(suggestion ?? '');
+    setReplyText('');
     setSendError(null);
   }
 
@@ -48,13 +66,12 @@ export default function MessagesPage() {
         body: { phone: replyTarget.phone, message: replyText.trim() },
       });
       closeReply();
-      setSuccessMessage(`Mensagem enviada para ${replyTarget.phone}.`);
-      setTimeout(() => setSuccessMessage(null), 5000);
+      toast.success(`Mensagem enviada para ${replyTarget.phone}.`);
     } catch (err: unknown) {
       setSendError(
         err instanceof ApiError
           ? err.message
-          : 'Nao foi possivel enviar a mensagem. Verifique se o WHATSAPP_ACCESS_TOKEN esta configurado.',
+          : 'Não foi possível enviar a mensagem. Verifique se o WHATSAPP_ACCESS_TOKEN está configurado.',
       );
     } finally {
       setSending(false);
@@ -65,57 +82,61 @@ export default function MessagesPage() {
     <>
       <PageHeader
         title="Mensagens"
-        description="Historico de mensagens e classificacoes da IA."
+        description="Histórico de mensagens e classificações da IA."
       />
 
-      {successMessage ? (
-        <div className="mb-4">
-          <Alert tone="success" message={successMessage} />
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Buscar por telefone ou conteúdo..."
+        />
+        <div className="flex gap-1">
+          {directionFilters.map((f) => (
+            <button
+              key={f.value}
+              type="button"
+              onClick={() => setFilters({ direction: f.value || undefined })}
+              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                directionFilter === f.value
+                  ? 'bg-brand text-white'
+                  : 'bg-white border border-line text-muted hover:border-brand hover:text-brand'
+              }`}
+            >
+              {f.label}
+              {meta && f.value === '' ? ` (${meta.total})` : ''}
+            </button>
+          ))}
         </div>
-      ) : null}
+      </div>
 
       {loading ? <DataState message="Carregando mensagens" /> : null}
       {error ? <DataState message={error} /> : null}
 
-      {data ? (
-        <div className="space-y-8">
-          <section>
-            <h2 className="mb-3 text-sm font-semibold uppercase text-muted">
-              Recebidas ({inbound.length})
-            </h2>
-            {inbound.length === 0 ? (
-              <div className="rounded-md border border-line bg-white px-4 py-6 text-sm text-muted">
-                Nenhuma mensagem recebida.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {inbound.map((message) => (
-                  <MessageCard
-                    key={message.id}
-                    message={message}
-                    onReply={() => openReply(message, message.aiSummary ? null : null)}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section>
-            <h2 className="mb-3 text-sm font-semibold uppercase text-muted">
-              Enviadas ({outbound.length})
-            </h2>
-            {outbound.length === 0 ? (
-              <div className="rounded-md border border-line bg-white px-4 py-6 text-sm text-muted">
-                Nenhuma mensagem enviada ainda.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {outbound.map((message) => (
-                  <OutboundCard key={message.id} message={message} />
-                ))}
-              </div>
-            )}
-          </section>
+      {!loading && !error ? (
+        <div className="space-y-3">
+          {data.length === 0 ? (
+            <div className="rounded-md border border-line bg-white px-4 py-6 text-sm text-muted">
+              Nenhuma mensagem encontrada.
+            </div>
+          ) : (
+            data.map((message) =>
+              message.direction === 'inbound' ? (
+                <MessageCard
+                  key={message.id}
+                  message={message}
+                  onReply={() => openReply(message)}
+                />
+              ) : (
+                <OutboundCard key={message.id} message={message} />
+              ),
+            )
+          )}
+          {meta && meta.totalPages > 1 ? (
+            <div className="mt-4">
+              <Pagination meta={meta} onPageChange={setPage} />
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -132,7 +153,7 @@ export default function MessagesPage() {
             <p className="text-sm text-ink">{replyTarget.content}</p>
             {replyTarget.aiIntent ? (
               <p className="mt-2 text-xs text-muted">
-                Intencao detectada:{' '}
+                Intenção detectada:{' '}
                 <span className="font-medium text-brand">
                   {replyTarget.aiIntent.replaceAll('_', ' ')}
                 </span>
@@ -189,12 +210,12 @@ function MessageCard({
           ) : null}
           {message.aiAnalyzed === false ? (
             <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
-              aguardando analise
+              aguardando análise
             </span>
           ) : null}
           {message.aiConfidence != null ? (
             <span className="text-xs text-muted">
-              {Math.round(message.aiConfidence * 100)}% confianca
+              {Math.round(message.aiConfidence * 100)}% confiança
             </span>
           ) : null}
         </div>
@@ -212,7 +233,7 @@ function MessageCard({
       {message.aiSummary ? (
         <div className="mt-2 rounded-md border border-teal-100 bg-teal-50 px-3 py-2">
           <p className="text-xs font-semibold uppercase text-brand">
-            Analise da IA
+            Análise da IA
           </p>
           <p className="mt-1 text-xs text-ink">{message.aiSummary}</p>
         </div>

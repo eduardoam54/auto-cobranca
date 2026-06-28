@@ -1,3 +1,17 @@
+export type PaginationMeta = {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+};
+
+export type Paginated<T> = {
+  data: T[];
+  meta: PaginationMeta;
+};
+
 export type LoginResponse = {
   accessToken: string;
   user: {

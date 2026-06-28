@@ -5,7 +5,15 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../infra/prisma/prisma.service';
+import {
+  buildPaginatedResult,
+  getPaginationParams,
+  resolveOrderBy,
+} from '../common/pagination';
 import { CreateCollectionVisitDto } from './dto/create-collection-visit.dto';
+import { ListCollectionVisitsQueryDto } from './dto/list-collection-visits-query.dto';
+
+const COLLECTION_VISIT_SORT_FIELDS = ['visitedAt', 'createdAt'] as const;
 
 @Injectable()
 export class CollectionVisitService {
@@ -80,16 +88,40 @@ export class CollectionVisitService {
     });
   }
 
-  findAll(companyId: string) {
-    return this.prisma.collectionVisit.findMany({
-      where: {
-        companyId,
-        deletedAt: null,
-      },
-      orderBy: {
-        visitedAt: 'desc',
-      },
-    });
+  async findAll(companyId: string, query: ListCollectionVisitsQueryDto) {
+    const { page, limit, skip, take } = getPaginationParams(query);
+    const search = query.search?.trim();
+
+    const where: Prisma.CollectionVisitWhereInput = {
+      companyId,
+      deletedAt: null,
+      ...(query.result ? { result: query.result } : {}),
+      ...(query.collectorId ? { collectorId: query.collectorId } : {}),
+      ...(query.clientId ? { clientId: query.clientId } : {}),
+      ...(query.visitedFrom || query.visitedTo
+        ? {
+            visitedAt: {
+              ...(query.visitedFrom ? { gte: query.visitedFrom } : {}),
+              ...(query.visitedTo ? { lte: query.visitedTo } : {}),
+            },
+          }
+        : {}),
+      ...(search ? { notes: { contains: search, mode: 'insensitive' } } : {}),
+    };
+
+    const orderBy = resolveOrderBy(
+      query.sortBy,
+      query.sortOrder,
+      COLLECTION_VISIT_SORT_FIELDS,
+      'visitedAt',
+    );
+
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.collectionVisit.findMany({ where, orderBy, skip, take }),
+      this.prisma.collectionVisit.count({ where }),
+    ]);
+
+    return buildPaginatedResult(data, total, page, limit);
   }
 
   async findOne(companyId: string, id: string) {
