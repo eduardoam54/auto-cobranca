@@ -1,0 +1,62 @@
+name: Backup Banco de Dados
+
+on:
+  schedule:
+    - cron: '0 6 * * *' # Todo dia às 3h (horário de Brasília = UTC-3)
+  workflow_dispatch:      # Permite rodar manualmente pelo GitHub
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Instalar cliente PostgreSQL
+        run: sudo apt-get install -y postgresql-client
+
+      - name: Gerar backup
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_PUBLIC_URL }}
+          PGSSLMODE: require
+        run: |
+          FILENAME="backup-$(date +'%Y-%m-%d_%H-%M-%S').sql.gz"
+          echo "Gerando backup: $FILENAME"
+          pg_dump "$DATABASE_URL" | gzip > "$FILENAME"
+          echo "BACKUP_FILE=$FILENAME" >> $GITHUB_ENV
+          echo "Tamanho: $(du -sh $FILENAME | cut -f1)"
+
+      - name: Enviar para Google Drive
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+          FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
+          BACKUP_FILE: ${{ env.BACKUP_FILE }}
+        run: |
+          pip install google-api-python-client google-auth -q
+          python3 << 'EOF'
+          import os, json
+          from google.oauth2 import service_account
+          from googleapiclient.discovery import build
+          from googleapiclient.http import MediaFileUpload
+          from datetime import datetime, timedelta, timezone
+
+          creds = service_account.Credentials.from_service_account_info(
+              json.loads(os.environ['GOOGLE_CREDENTIALS']),
+              scopes=['https://www.googleapis.com/auth/drive.file']
+          )
+          service = build('drive', 'v3', credentials=creds)
+          filename = os.environ['BACKUP_FILE']
+
+          file = service.files().create(
+              body={'name': filename, 'parents': [os.environ['FOLDER_ID']]},
+              media_body=MediaFileUpload(filename, mimetype='application/gzip')
+          ).execute()
+          print(f'Backup enviado com sucesso: {file["id"]}')
+
+          cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+          old = service.files().list(
+              q=f"'{os.environ['FOLDER_ID']}' in parents and createdTime < '{cutoff}'",
+              fields='files(id, name)'
+          ).execute()
+          for f in old.get('files', []):
+              service.files().delete(fileId=f['id']).execute()
+              print(f'Backup antigo removido: {f["name"]}')
+          EOF
