@@ -1,3 +1,5 @@
+'use client';
+
 import {
   createContext,
   useCallback,
@@ -8,20 +10,25 @@ import {
   useState,
 } from 'react';
 import type { ReactNode } from 'react';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
+import type { AppStateStatus } from 'react-native';
 import { router } from 'expo-router';
 import * as Notifications from 'expo-notifications';
+import * as LocalAuthentication from 'expo-local-authentication';
 import NetInfo from '@react-native-community/netinfo';
 import { syncOfflineQueue } from '@/offline/offline-sync';
 import {
   apiRequest,
   setTokenProvider,
   setUnauthorizedHandler,
+  setRefreshHandler,
 } from '@/api/client';
 import {
-  clearStoredAccessToken,
+  clearAllTokens,
   getStoredAccessToken,
+  getStoredRefreshToken,
   setStoredAccessToken,
+  setStoredRefreshToken,
 } from './auth-storage';
 import type { LoginResponse, MobileMe } from '@/types/api';
 
@@ -71,6 +78,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<MobileMe | null>(null);
   const [initializing, setInitializing] = useState(true);
   const tokenRef = useRef<string | null>(null);
+  // Controle de bloqueio de biometria ao voltar do background
+  const backgroundedAt = useRef<number | null>(null);
+  const [biometricLocked, setBiometricLocked] = useState(false);
 
   const setAuthToken = useCallback((nextToken: string | null) => {
     tokenRef.current = nextToken;
@@ -78,7 +88,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    await clearStoredAccessToken();
+    const refresh = await getStoredRefreshToken();
+    if (refresh) {
+      try {
+        await apiRequest('/auth/logout', {
+          method: 'POST',
+          body: { refreshToken: refresh },
+          auth: false,
+        });
+      } catch {
+        // falha silenciosa — limpa localmente de qualquer forma
+      }
+    }
+    await clearAllTokens();
     setAuthToken(null);
     setMe(null);
     router.replace('/login');
@@ -89,10 +111,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setMe(profile);
   }, []);
 
+  // Função de refresh chamada pelo api/client quando recebe 401
+  const doRefresh = useCallback(async (): Promise<string | null> => {
+    const refreshToken = await getStoredRefreshToken();
+    if (!refreshToken) return null;
+
+    try {
+      const res = await apiRequest<{ accessToken: string; refreshToken: string }>(
+        '/auth/refresh',
+        { method: 'POST', body: { refreshToken }, auth: false },
+      );
+      await setStoredAccessToken(res.accessToken);
+      await setStoredRefreshToken(res.refreshToken);
+      setAuthToken(res.accessToken);
+      return res.accessToken;
+    } catch {
+      await logout();
+      return null;
+    }
+  }, [setAuthToken, logout]);
+
   useEffect(() => {
     setTokenProvider(() => tokenRef.current);
     setUnauthorizedHandler(logout);
-  }, [logout]);
+    setRefreshHandler(doRefresh);
+  }, [logout, doRefresh]);
 
   // Auto-sync queue when connectivity is restored
   useEffect(() => {
@@ -107,18 +150,71 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, []);
 
+  // Biometric lock: solicita biometria se app ficou em background por > 5 min
+  useEffect(() => {
+    const LOCK_AFTER_MS = 5 * 60 * 1000;
+
+    function handleAppState(nextState: AppStateStatus) {
+      if (nextState === 'background' || nextState === 'inactive') {
+        backgroundedAt.current = Date.now();
+      } else if (nextState === 'active' && backgroundedAt.current) {
+        const elapsed = Date.now() - backgroundedAt.current;
+        backgroundedAt.current = null;
+        if (elapsed > LOCK_AFTER_MS && tokenRef.current) {
+          setBiometricLocked(true);
+        }
+      }
+    }
+
+    const sub = AppState.addEventListener('change', handleAppState);
+    return () => sub.remove();
+  }, []);
+
+  // Autentica com biometria quando bloqueado
+  useEffect(() => {
+    if (!biometricLocked) return;
+
+    async function authenticate() {
+      const supported = await LocalAuthentication.hasHardwareAsync();
+      if (!supported) {
+        setBiometricLocked(false);
+        return;
+      }
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: 'Confirme sua identidade para continuar',
+        cancelLabel: 'Sair',
+      });
+      if (result.success) {
+        setBiometricLocked(false);
+      } else {
+        await logout();
+      }
+    }
+
+    void authenticate();
+  }, [biometricLocked, logout]);
+
   useEffect(() => {
     let active = true;
 
     async function bootstrap() {
       try {
         const storedToken = await getStoredAccessToken();
-        if (!active) {
-          return;
-        }
+        if (!active) return;
 
         if (!storedToken) {
-          setAuthToken(null);
+          // Tenta renovar silenciosamente via refresh token persistido
+          const refreshed = await doRefresh();
+          if (!active) return;
+          if (refreshed) {
+            const profile = await apiRequest<MobileMe>('/mobile/me');
+            if (active) {
+              setMe(profile);
+              void registerPushToken();
+            }
+          } else {
+            setAuthToken(null);
+          }
           return;
         }
 
@@ -129,24 +225,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           void registerPushToken();
         }
       } catch {
-        await clearStoredAccessToken();
-        if (active) {
-          setAuthToken(null);
-          setMe(null);
+        // Access token expirou — tenta refresh
+        const refreshed = await doRefresh();
+        if (!active) return;
+        if (refreshed) {
+          try {
+            const profile = await apiRequest<MobileMe>('/mobile/me');
+            if (active) setMe(profile);
+          } catch {
+            await clearAllTokens();
+            if (active) { setAuthToken(null); setMe(null); }
+          }
+        } else {
+          await clearAllTokens();
+          if (active) { setAuthToken(null); setMe(null); }
         }
       } finally {
-        if (active) {
-          setInitializing(false);
-        }
+        if (active) setInitializing(false);
       }
     }
 
     void bootstrap();
-
-    return () => {
-      active = false;
-    };
-  }, [setAuthToken]);
+    return () => { active = false; };
+  }, [setAuthToken, doRefresh]);
 
   const login = useCallback(
     async (email: string, password: string) => {
@@ -157,6 +258,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       await setStoredAccessToken(response.accessToken);
+      if (response.refreshToken) {
+        await setStoredRefreshToken(response.refreshToken);
+      }
       setAuthToken(response.accessToken);
       const profile = await apiRequest<MobileMe>('/mobile/me');
       setMe(profile);
@@ -167,36 +271,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo(
-    () => ({
-      token,
-      me,
-      initializing,
-      login,
-      logout,
-      reloadMe,
-    }),
+    () => ({ token, me, initializing, login, logout, reloadMe }),
     [initializing, login, logout, me, reloadMe, token],
   );
+
+  if (biometricLocked) {
+    return null; // tela em branco enquanto aguarda biometria
+  }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
   const value = useContext(AuthContext);
-
-  if (!value) {
-    throw new Error('useAuth precisa estar dentro de AuthProvider.');
-  }
-
+  if (!value) throw new Error('useAuth precisa estar dentro de AuthProvider.');
   return value;
 }
 
 export function useProtectedRoute() {
   const { initializing, token } = useAuth();
-
   useEffect(() => {
-    if (!initializing && !token) {
-      router.replace('/login');
-    }
+    if (!initializing && !token) router.replace('/login');
   }, [initializing, token]);
 }

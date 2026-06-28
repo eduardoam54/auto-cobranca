@@ -8,40 +8,42 @@ datasource db {
 }
 
 model Company {
-  id          String            @id @default(cuid())
-  name        String
-  document    String            @unique
-  phone       String
-  email       String
-  clients     Client[]
-  collections Collection[]
-  collectors  Collector[]
-  events      SystemEvent[]
-  messages    Message[]
-  tasks       CollectionTask[]
-  users       User[]
-  visits      CollectionVisit[]
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  deletedAt   DateTime?
+  id             String            @id @default(cuid())
+  name           String
+  document       String            @unique
+  phone          String
+  email          String
+  clients        Client[]
+  collections    Collection[]
+  collectors     Collector[]
+  events         SystemEvent[]
+  messages       Message[]
+  tasks          CollectionTask[]
+  users          User[]
+  visits         CollectionVisit[]
+  refreshTokens  RefreshToken[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  deletedAt      DateTime?
 
   @@map("companies")
 }
 
 model User {
-  id           String        @id @default(cuid())
-  companyId    String
-  company      Company       @relation(fields: [companyId], references: [id])
-  collectors   Collector[]
-  events       SystemEvent[]
-  name         String
-  email        String        @unique
-  passwordHash String
-  role         UserRole
-  active       Boolean       @default(true)
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  deletedAt    DateTime?
+  id             String         @id @default(cuid())
+  companyId      String
+  company        Company        @relation(fields: [companyId], references: [id])
+  collectors     Collector[]
+  events         SystemEvent[]
+  refreshTokens  RefreshToken[]
+  name           String
+  email          String         @unique
+  passwordHash   String
+  role           UserRole
+  active         Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  deletedAt      DateTime?
 
   @@index([companyId])
   @@index([role])
@@ -289,6 +291,23 @@ model SystemEvent {
   @@index([status])
   @@index([occurredAt])
   @@map("system_events")
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  companyId String
+  company   Company   @relation(fields: [companyId], references: [id])
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([companyId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
 }
 
 enum CollectionStatus {

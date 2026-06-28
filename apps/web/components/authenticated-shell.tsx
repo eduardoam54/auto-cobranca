@@ -4,20 +4,21 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { clearToken, getToken } from '@/lib/auth';
+import { apiRequest } from '@/lib/api';
 
 const navigation = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/clients', label: 'Clientes' },
-  { href: '/collections', label: 'Cobrancas' },
+  { href: '/collections', label: 'Cobranças' },
   { href: '/collectors', label: 'Cobradores' },
   { href: '/collection-tasks', label: 'Tarefas' },
   { href: '/visits', label: 'Visitas' },
-  { href: '/reports', label: 'Relatorios' },
+  { href: '/reports', label: 'Relatórios' },
   { href: '/messages', label: 'Mensagens' },
   { href: '/messages/simulate', label: 'Simular WhatsApp' },
-  { href: '/users', label: 'Usuarios' },
+  { href: '/users', label: 'Usuários' },
   { href: '/imports', label: 'Importar Tabela' },
-  { href: '/ia', label: 'IA & Automacao' },
+  { href: '/ia', label: 'IA & Automação' },
 ];
 
 type AuthenticatedShellProps = {
@@ -38,7 +39,12 @@ export function AuthenticatedShell({ children }: AuthenticatedShellProps) {
     setReady(true);
   }, [router]);
 
-  function handleLogout() {
+  async function handleLogout() {
+    try {
+      await apiRequest('/auth/logout', { method: 'POST' });
+    } catch {
+      // mesmo se falhar, limpa localmente
+    }
     clearToken();
     router.replace('/login');
   }
@@ -55,7 +61,7 @@ export function AuthenticatedShell({ children }: AuthenticatedShellProps) {
     <div className="min-h-screen bg-panel">
       <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-line bg-white px-4 py-5 lg:block">
         <div className="mb-8">
-          <p className="text-lg font-semibold text-ink">Auto Cobranca</p>
+          <p className="text-lg font-semibold text-ink">Auto Cobrança</p>
           <p className="mt-1 text-xs text-muted">Painel administrativo</p>
         </div>
         <nav className="space-y-1">
@@ -89,7 +95,7 @@ export function AuthenticatedShell({ children }: AuthenticatedShellProps) {
       <div className="lg:pl-64">
         <header className="sticky top-0 z-10 border-b border-line bg-white/95 px-4 py-3 backdrop-blur lg:hidden">
           <div className="mb-3 flex items-center justify-between">
-            <p className="font-semibold text-ink">Auto Cobranca</p>
+            <p className="font-semibold text-ink">Auto Cobrança</p>
             <button
               type="button"
               onClick={handleLogout}

@@ -23,10 +23,12 @@ import { JwtStrategy } from './strategies/jwt.strategy';
           );
         }
 
+        const jwtExpiresIn = configService.get<string>('JWT_EXPIRES_IN', '15m') as `${number}${'s' | 'm' | 'h' | 'd'}` | number;
+
         return {
           secret: jwtSecret,
           signOptions: {
-            expiresIn: '1d',
+            expiresIn: jwtExpiresIn,
           },
         };
       },
@@ -34,5 +36,6 @@ import { JwtStrategy } from './strategies/jwt.strategy';
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],
+  exports: [AuthService],
 })
 export class AuthModule {}

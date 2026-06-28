@@ -28,6 +28,7 @@ export type CollectionTaskStatus =
 
 export type LoginResponse = {
   accessToken: string;
+  refreshToken?: string;
   user: AuthUser;
 };
 
