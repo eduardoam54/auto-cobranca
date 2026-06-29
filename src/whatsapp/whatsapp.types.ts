@@ -48,3 +48,26 @@ export type WhatsappWebhookResult = {
   processedMessages: number;
   skippedMessages: number;
 };
+
+// Evolution API webhook payload
+export type EvolutionWebhookPayload = {
+  event?: string;
+  instance?: string;
+  data?: {
+    key?: {
+      remoteJid?: string;
+      fromMe?: boolean;
+      id?: string;
+    };
+    pushName?: string;
+    message?: {
+      conversation?: string;
+      imageMessage?: { caption?: string };
+      documentMessage?: { caption?: string };
+      audioMessage?: Record<string, unknown>;
+      videoMessage?: { caption?: string };
+    };
+    messageType?: string;
+    messageTimestamp?: number;
+  };
+};

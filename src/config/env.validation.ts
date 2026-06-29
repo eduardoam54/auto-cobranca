@@ -32,12 +32,20 @@ export const envValidationSchema = Joi.object({
   // Fila / cache
   REDIS_URL: Joi.string().uri().default('redis://localhost:6379'),
 
-  // WhatsApp Cloud API (opcional — sem isso o envio fica desabilitado/mock)
+  // WhatsApp — provedor ativo ('meta' ou 'evolution', padrão: 'meta')
+  WHATSAPP_PROVIDER: Joi.string().valid('meta', 'evolution').default('meta'),
   WHATSAPP_MOCK_MODE: Joi.boolean().truthy('true').falsy('false').default(false),
-  WHATSAPP_WEBHOOK_VERIFY_TOKEN: Joi.string().allow('').optional(),
   WHATSAPP_COMPANY_ID: Joi.string().allow('').optional(),
+
+  // WhatsApp Cloud API — Meta (opcional)
+  WHATSAPP_WEBHOOK_VERIFY_TOKEN: Joi.string().allow('').optional(),
   WHATSAPP_PHONE_NUMBER_ID: Joi.string().allow('').optional(),
   WHATSAPP_ACCESS_TOKEN: Joi.string().allow('').optional(),
+
+  // Evolution API (opcional — ativo quando WHATSAPP_PROVIDER=evolution)
+  EVOLUTION_API_URL: Joi.string().uri().allow('').optional(),
+  EVOLUTION_API_KEY: Joi.string().allow('').optional(),
+  EVOLUTION_INSTANCE_NAME: Joi.string().allow('').optional(),
 
   // Provedores de IA (opcional — sem chave, o agente usa analise mock)
   ANTHROPIC_API_KEY: Joi.string().allow('').optional(),

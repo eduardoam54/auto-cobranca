@@ -8,7 +8,7 @@ import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { SendWhatsappMessageDto } from './dto/send-whatsapp-message.dto';
 import { WhatsappWebhookQueryDto } from './dto/whatsapp-webhook-query.dto';
 import { WhatsappService } from './whatsapp.service';
-import { WhatsappWebhookPayload } from './whatsapp.types';
+import { EvolutionWebhookPayload, WhatsappWebhookPayload } from './whatsapp.types';
 
 @Controller('whatsapp')
 export class WhatsappController {
@@ -26,6 +26,11 @@ export class WhatsappController {
   @Post('webhook')
   handleWebhook(@Body() payload: WhatsappWebhookPayload) {
     return this.whatsappService.handleWebhook(payload);
+  }
+
+  @Post('evolution/webhook')
+  handleEvolutionWebhook(@Body() payload: EvolutionWebhookPayload) {
+    return this.whatsappService.handleEvolutionWebhook(payload);
   }
 
   @Post('send')

@@ -21,6 +21,7 @@ import { QUEUE_NAMES } from '../infra/queue/queue.constants';
 import { WhatsappSenderService } from '../infra/whatsapp-sender/whatsapp-sender.service';
 import { MessageAnalysisJobData } from '../modules/message-analysis/message-analysis.job';
 import {
+  EvolutionWebhookPayload,
   WhatsappMessage,
   WhatsappWebhookPayload,
   WhatsappWebhookResult,
@@ -353,6 +354,130 @@ export class WhatsappService {
       return type;
     }
 
+    return 'other';
+  }
+
+  async handleEvolutionWebhook(
+    payload: EvolutionWebhookPayload,
+  ): Promise<WhatsappWebhookResult> {
+    // Ignorar eventos que não são mensagens recebidas
+    if (payload.event !== 'messages.upsert' || payload.data?.key?.fromMe) {
+      return { received: true, processedMessages: 0, skippedMessages: 0 };
+    }
+
+    const companyId = this.configService.get<string>('WHATSAPP_COMPANY_ID');
+    if (!companyId) {
+      throw new BadRequestException('Empresa do WhatsApp nao configurada.');
+    }
+
+    await this.ensureActiveCompany(companyId);
+
+    const key = payload.data?.key;
+    const msgData = payload.data;
+
+    if (!key?.id || !key?.remoteJid) {
+      return { received: true, processedMessages: 0, skippedMessages: 1 };
+    }
+
+    // Extrai número: "5511999990001@s.whatsapp.net" → "5511999990001"
+    const phone = key.remoteJid.replace(/@.*$/, '');
+
+    const content = this.extractEvolutionContent(msgData?.message, msgData?.messageType);
+    if (!content) {
+      return { received: true, processedMessages: 0, skippedMessages: 1 };
+    }
+
+    const existingMessage = await this.prisma.message.findFirst({
+      where: { companyId, externalMessageId: key.id, deletedAt: null },
+      select: { id: true },
+    });
+
+    if (existingMessage) {
+      return { received: true, processedMessages: 0, skippedMessages: 1 };
+    }
+
+    const client = await this.findClientByPhone(companyId, phone);
+    const receivedAt = msgData?.messageTimestamp
+      ? new Date(msgData.messageTimestamp * 1000)
+      : new Date();
+
+    const messageType = this.toEvolutionMessageType(msgData?.messageType);
+
+    const savedMessage = await this.createMessage({
+      companyId,
+      clientId: client?.id,
+      phone,
+      content,
+      externalMessageId: key.id,
+      receivedAt,
+      messageType,
+    });
+
+    await this.systemEventService.record({
+      companyId,
+      clientId: client?.id,
+      messageId: savedMessage.id,
+      source: SystemEventSource.whatsapp,
+      type: SystemEventType.whatsapp_message_received,
+      description: 'Mensagem inbound do WhatsApp registrada via Evolution API.',
+      metadata: { externalMessageId: key.id, from: phone, messageType },
+    });
+
+    await this.messageAnalysisQueue.add(
+      'analyze',
+      {
+        companyId,
+        messageId: savedMessage.id,
+        phone,
+        messageContent: content,
+        clientId: client?.id,
+      },
+      {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: { count: 100 },
+        removeOnFail: { count: 200 },
+      },
+    );
+
+    this.logger.log(`[Evolution] Mensagem ${savedMessage.id} salva — job de analise enfileirado.`);
+
+    return { received: true, processedMessages: 1, skippedMessages: 0 };
+  }
+
+  private extractEvolutionContent(
+    message: NonNullable<EvolutionWebhookPayload['data']>['message'],
+    messageType?: string,
+  ): string | null {
+    if (!message || !messageType) return null;
+
+    if (messageType === 'conversation') {
+      return message.conversation?.trim() || null;
+    }
+    if (messageType === 'imageMessage') {
+      return message.imageMessage?.caption?.trim() || '[imagem]';
+    }
+    if (messageType === 'documentMessage') {
+      return message.documentMessage?.caption?.trim() || '[documento]';
+    }
+    if (messageType === 'videoMessage') {
+      return message.videoMessage?.caption?.trim() || '[vídeo]';
+    }
+    if (messageType === 'audioMessage') {
+      return '[áudio]';
+    }
+
+    return `[${messageType}]`;
+  }
+
+  private toEvolutionMessageType(
+    messageType?: string,
+  ): 'text' | 'audio' | 'image' | 'document' | 'location' | 'other' {
+    if (messageType === 'conversation') return 'text';
+    if (messageType === 'audioMessage') return 'audio';
+    if (messageType === 'imageMessage') return 'image';
+    if (messageType === 'documentMessage') return 'document';
+    if (messageType === 'locationMessage') return 'location';
     return 'other';
   }
 
