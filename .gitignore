@@ -9,3 +9,5 @@ coverage
 .claude/
 playwright-report/
 test-results/
+.vscode/
+tsconfig.build.tsbuildinfo
